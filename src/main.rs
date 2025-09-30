@@ -2,7 +2,9 @@ use core_foundation::array::{CFArrayGetCount, CFArrayGetValueAtIndex};
 use core_foundation::base::{CFTypeRef, TCFType, TCFTypeRef, ToVoid};
 use core_foundation::number::{kCFNumberIntType, CFNumberGetValue};
 use core_foundation::string::CFString;
-use core_graphics::base::{kCGErrorFailure as K_CG_ERROR_FAILURE, kCGErrorSuccess as K_CG_ERROR_SUCCESS};
+use core_graphics::base::{
+    kCGErrorFailure as K_CG_ERROR_FAILURE, kCGErrorSuccess as K_CG_ERROR_SUCCESS,
+};
 use core_graphics::display::CGError;
 use core_graphics::display::CGWindowListCopyWindowInfo;
 use core_graphics::display::{CFDictionary, CGDirectDisplayID, CGDisplayBounds};
@@ -63,13 +65,7 @@ fn window_is_user_application(window: CFDictionaryRef) -> bool {
     } == 1
     {
         let mut l = 0;
-        unsafe {
-            CFNumberGetValue(
-                layer_ref.cast(),
-                kCFNumberIntType,
-                (&raw mut l).cast(),
-            )
-        };
+        unsafe { CFNumberGetValue(layer_ref.cast(), kCFNumberIntType, (&raw mut l).cast()) };
         l
     } else {
         1
@@ -105,11 +101,7 @@ unsafe fn get_display_from_window(window: CFDictionaryRef) -> Option<CGDirectDis
         ) == 1
         {
             let mut num: i32 = 0;
-            CFNumberGetValue(
-                val.cast(),
-                kCFNumberIntType,
-                (&raw mut num).cast(),
-            );
+            CFNumberGetValue(val.cast(), kCFNumberIntType, (&raw mut num).cast());
             f64::from(num)
         } else {
             0.0
