@@ -152,6 +152,17 @@ fn get_string_from_dict(dict: CFDictionaryRef, key: &str) -> Result<String, &'st
     })
 }
 
+fn get_bounds_from_dict(dict: CFDictionaryRef, key: &str) -> Result<Bounds, &'static str> {
+    get_from_dict(dict, key, |value_ref| {
+        let bounds_dict: CFDictionary =
+            unsafe { CFDictionary::wrap_under_get_rule(value_ref.cast()) };
+
+        CGRect::from_dict_representation(&bounds_dict)
+            .expect("could not get bounds")
+            .into()
+    })
+}
+
 fn get_from_dict<T, F>(dict: CFDictionaryRef, key: &str, conv: F) -> Result<T, &'static str>
 where
     F: FnOnce(CFTypeRef) -> T,
@@ -203,26 +214,11 @@ impl TryFrom<CFDictionaryRef> for Window {
             get_number_from_dict::<u32>(dict, Self::STORE_TYPE_DICTIONARY_KEY, kCFNumberIntType)?
                 as CGWindowBackingType;
 
-        let mut val_ref: CFTypeRef = std::ptr::null_mut();
-        if unsafe {
-            CFDictionaryGetValueIfPresent(
-                dict,
-                CFString::new(Self::BOUNDS_DICTIONARY_KEY).to_void(),
-                &mut val_ref,
-            )
-        } != 1
-        {
-            return Err("failed to get");
-        }
-
-        let bounds_dict: CFDictionary =
-            unsafe { CFDictionary::wrap_under_get_rule(val_ref.cast()) };
-
-        let bounds = CGRect::from_dict_representation(&bounds_dict).expect("could not get bounds");
+        let bounds = get_bounds_from_dict(dict, Self::BOUNDS_DICTIONARY_KEY)?;
 
         Ok(Self {
             alpha: UnitFloat::new(alpha).expect("invalid alpha"),
-            bounds: bounds.into(),
+            bounds,
             is_on_screen,
             layer,
             memory_usage_bytes: mem,
