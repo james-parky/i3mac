@@ -114,18 +114,6 @@ impl Window {
 
         best
     }
-
-    const ALPHA_DICTIONARY_KEY: &'static str = "kCGWindowAlpha";
-    const BOUNDS_DICTIONARY_KEY: &'static str = "kCGWindowBounds";
-    const IS_ON_SCREEN_DICTIONARY_KEY: &'static str = "kCGWindowIsOnscreen";
-    const LAYER_DICTIONARY_KEY: &'static str = "kCGWindowLayer";
-    const MEMORY_USAGE_BYTES_DICTIONARY_KEY: &'static str = "kCGWindowMemoryUsage";
-    const NAME_DICTIONARY_KEY: &'static str = "kCGWindowName";
-    const NUMBER_DICTIONARY_KEY: &'static str = "kCGWindowNumber";
-    const OWNER_NAME_DICTIONARY_KEY: &'static str = "kCGWindowOwnerName";
-    const OWNER_PID_DICTIONARY_KEY: &'static str = "kCGWindowOwnerPID";
-    const SHARING_STATE_DICTIONARY_KEY: &'static str = "kCGWindowSharingState";
-    const STORE_TYPE_DICTIONARY_KEY: &'static str = "kCGWindowStoreType";
 }
 
 fn get_number_from_dict<T: Default>(
@@ -181,49 +169,55 @@ where
 impl TryFrom<CFDictionaryRef> for Window {
     type Error = &'static str;
     fn try_from(dict: CFDictionaryRef) -> Result<Self, Self::Error> {
+        const ALPHA_DICTIONARY_KEY: &str = "kCGWindowAlpha";
+        const BOUNDS_DICTIONARY_KEY: &str = "kCGWindowBounds";
+        const IS_ON_SCREEN_DICTIONARY_KEY: &str = "kCGWindowIsOnscreen";
+        const LAYER_DICTIONARY_KEY: &str = "kCGWindowLayer";
+        const MEMORY_USAGE_BYTES_DICTIONARY_KEY: &str = "kCGWindowMemoryUsage";
+        const NAME_DICTIONARY_KEY: &str = "kCGWindowName";
+        const NUMBER_DICTIONARY_KEY: &str = "kCGWindowNumber";
+        const OWNER_NAME_DICTIONARY_KEY: &str = "kCGWindowOwnerName";
+        const OWNER_PID_DICTIONARY_KEY: &str = "kCGWindowOwnerPID";
+        const SHARING_STATE_DICTIONARY_KEY: &str = "kCGWindowSharingState";
+        const STORE_TYPE_DICTIONARY_KEY: &str = "kCGWindowStoreType";
+
         // Allow this to make it consistent with constants imported from
         // core_foundation.
         #[allow(non_upper_case_globals)]
         const kCGWindowIDCFNumberType: CFNumberType = kCFNumberLongLongType;
 
-        let layer = get_number_from_dict(dict, Self::LAYER_DICTIONARY_KEY, kCFNumberIntType)?;
-        let mem = get_number_from_dict(
-            dict,
-            Self::MEMORY_USAGE_BYTES_DICTIONARY_KEY,
-            kCFNumberLongLongType,
-        )?;
-        let number =
-            get_number_from_dict(dict, Self::NUMBER_DICTIONARY_KEY, kCGWindowIDCFNumberType)?;
-        let alpha = get_number_from_dict(dict, Self::ALPHA_DICTIONARY_KEY, kCFNumberFloatType)?;
-        let owner_pid =
-            get_number_from_dict::<i32>(dict, Self::OWNER_PID_DICTIONARY_KEY, kCFNumberIntType)?;
-        let owner_name = get_string_from_dict(dict, Self::OWNER_NAME_DICTIONARY_KEY).ok();
-        let name = get_string_from_dict(dict, Self::NAME_DICTIONARY_KEY).ok();
-        let is_on_screen = get_boolean_from_dict(dict, Self::IS_ON_SCREEN_DICTIONARY_KEY).ok();
-
-        let sharing_state = get_number_from_dict::<u32>(
-            dict,
-            Self::SHARING_STATE_DICTIONARY_KEY,
-            kCFNumberIntType,
-        )? as CGWindowSharingType;
-        let store_type =
-            get_number_from_dict::<u32>(dict, Self::STORE_TYPE_DICTIONARY_KEY, kCFNumberIntType)?
-                as CGWindowBackingType;
-
-        let bounds = get_bounds_from_dict(dict, Self::BOUNDS_DICTIONARY_KEY)?;
+        let alpha = get_number_from_dict(dict, ALPHA_DICTIONARY_KEY, kCFNumberFloatType)?;
 
         Ok(Self {
             alpha: UnitFloat::new(alpha).expect("invalid alpha"),
-            bounds,
-            is_on_screen,
-            layer,
-            memory_usage_bytes: mem,
-            name,
-            number,
-            owner_name,
-            owner_pid: owner_pid as libc::pid_t,
-            sharing_state: sharing_state.try_into()?,
-            store_type: store_type.try_into()?,
+            bounds: get_bounds_from_dict(dict, BOUNDS_DICTIONARY_KEY)?,
+            is_on_screen: get_boolean_from_dict(dict, IS_ON_SCREEN_DICTIONARY_KEY).ok(),
+            layer: get_number_from_dict(dict, LAYER_DICTIONARY_KEY, kCFNumberIntType)?,
+            memory_usage_bytes: get_number_from_dict(
+                dict,
+                MEMORY_USAGE_BYTES_DICTIONARY_KEY,
+                kCFNumberLongLongType,
+            )?,
+            name: get_string_from_dict(dict, NAME_DICTIONARY_KEY).ok(),
+            number: get_number_from_dict(dict, NUMBER_DICTIONARY_KEY, kCGWindowIDCFNumberType)?,
+            owner_name: get_string_from_dict(dict, OWNER_NAME_DICTIONARY_KEY).ok(),
+            owner_pid: get_number_from_dict::<libc::pid_t>(
+                dict,
+                OWNER_PID_DICTIONARY_KEY,
+                kCFNumberIntType,
+            )?,
+            sharing_state: get_number_from_dict::<CGWindowSharingType>(
+                dict,
+                SHARING_STATE_DICTIONARY_KEY,
+                kCFNumberIntType,
+            )?
+            .try_into()?,
+            store_type: get_number_from_dict::<CGWindowBackingType>(
+                dict,
+                STORE_TYPE_DICTIONARY_KEY,
+                kCFNumberIntType,
+            )?
+            .try_into()?,
         })
     }
 }
