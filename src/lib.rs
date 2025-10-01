@@ -187,18 +187,14 @@ impl TryFrom<CFDictionaryRef> for Window {
         const kCGWindowIDCFNumberType: CFNumberType = kCFNumberLongLongType;
 
         let layer = get_number_from_dict(dict, Self::LAYER_DICTIONARY_KEY, kCFNumberIntType)?;
-        let mem = get_number_from_dict::<u64>(
+        let mem = get_number_from_dict(
             dict,
             Self::MEMORY_USAGE_BYTES_DICTIONARY_KEY,
             kCFNumberLongLongType,
         )?;
-        let number = get_number_from_dict::<u64>(
-            dict,
-            Self::NUMBER_DICTIONARY_KEY,
-            kCGWindowIDCFNumberType,
-        )?;
-        let alpha =
-            get_number_from_dict::<f32>(dict, Self::ALPHA_DICTIONARY_KEY, kCFNumberFloatType)?;
+        let number =
+            get_number_from_dict(dict, Self::NUMBER_DICTIONARY_KEY, kCGWindowIDCFNumberType)?;
+        let alpha = get_number_from_dict(dict, Self::ALPHA_DICTIONARY_KEY, kCFNumberFloatType)?;
         let owner_pid =
             get_number_from_dict::<i32>(dict, Self::OWNER_PID_DICTIONARY_KEY, kCFNumberIntType)?;
         let owner_name = get_string_from_dict(dict, Self::OWNER_NAME_DICTIONARY_KEY).ok();
