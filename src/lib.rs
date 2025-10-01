@@ -1,7 +1,19 @@
+use core_foundation::base::{CFTypeRef, TCFType, ToVoid};
+use core_foundation::dictionary::{CFDictionary, CFDictionaryGetValueIfPresent};
+use core_foundation::number::{
+    kCFNumberFloatType, kCFNumberIntType, kCFNumberLongLongType, CFBooleanGetValue,
+    CFNumberGetValue, CFNumberType,
+};
+use core_foundation::string::CFString;
+use core_graphics::base::CGError;
+use core_graphics::display::{
+    CFDictionaryRef, CGDirectDisplayID, CGDisplayBounds, CGGetActiveDisplayList, CGRect,
+};
 use core_graphics::window::{
     kCGWindowBackingStoreBuffered as K_CG_WINDOW_BACKING_STORE_BUFFERED,
     kCGWindowBackingStoreNonretained as K_CG_WINDOW_BACKING_STORE_NON_RETAINED,
-    kCGWindowBackingStoreRetained as K_CG_WINDOW_BACKING_STORE_RETAINED,
+    kCGWindowBackingStoreRetained as K_CG_WINDOW_BACKING_STORE_RETAINED, CGWindowBackingType,
+    CGWindowSharingType,
 };
 
 use core_graphics::window::{
@@ -10,6 +22,7 @@ use core_graphics::window::{
     kCGWindowSharingReadWrite as K_CG_WINDOW_SHARING_READ_WRITE,
 };
 
+#[derive(Debug)]
 pub struct UnitFloat(f32);
 
 impl UnitFloat {
@@ -27,6 +40,7 @@ impl UnitFloat {
 }
 
 #[allow(dead_code)]
+#[derive(Debug)]
 pub struct Window {
     /// The window's alpha fade level. This number is in the range 0.0 to 1.0,
     /// where 0.0 is fully transparent and 1.0 is fully opaque.
@@ -56,8 +70,51 @@ pub struct Window {
     store_type: StoreType,
 }
 
+use core_graphics::base::{
+    kCGErrorFailure as K_CG_ERROR_FAILURE, kCGErrorSuccess as K_CG_ERROR_SUCCESS,
+};
+
+pub fn get_active_displays() -> Result<Vec<CGDirectDisplayID>, CGError> {
+    const MAX_DISPLAYS: u32 = 16;
+
+    let mut buffer: Vec<CGDirectDisplayID> = vec![0u32; MAX_DISPLAYS as usize];
+    let mut actual_count: u32 = 0;
+
+    match unsafe {
+        CGGetActiveDisplayList(MAX_DISPLAYS, buffer.as_mut_ptr(), &raw mut actual_count)
+    } {
+        K_CG_ERROR_SUCCESS if actual_count <= MAX_DISPLAYS => {
+            Ok(buffer[0..actual_count as usize].to_vec())
+        }
+        K_CG_ERROR_SUCCESS if actual_count > MAX_DISPLAYS => Err(K_CG_ERROR_FAILURE),
+        x => Err(x),
+    }
+}
+
 #[allow(dead_code)]
 impl Window {
+    pub fn is_user_application(&self) -> bool {
+        self.layer == 0
+    }
+
+    pub fn get_display_id(&self) -> Option<CGDirectDisplayID> {
+        let buffer = get_active_displays().ok()?;
+
+        let mut best: Option<u32> = None;
+        let mut max_area = 0.0;
+
+        for id in &buffer {
+            let rect = unsafe { CGDisplayBounds(*id) };
+            let area = Bounds::overlapping_area(&self.bounds, &rect.into());
+            if area > max_area {
+                max_area = area;
+                best = Some(*id);
+            }
+        }
+
+        best
+    }
+
     const ALPHA_DICTIONARY_KEY: &'static str = "kCGWindowAlpha";
     const BOUNDS_DICTIONARY_KEY: &'static str = "kCGWindowBounds";
     const IS_ON_SCREEN_DICTIONARY_KEY: &'static str = "kCGWindowIsOnscreen";
@@ -71,6 +128,115 @@ impl Window {
     const STORE_TYPE_DICTIONARY_KEY: &'static str = "kCGWindowStoreType";
 }
 
+fn get_number_from_dict<T: Default>(
+    dict: CFDictionaryRef,
+    key: &str,
+    conversion_const: u32,
+) -> Result<T, &'static str> {
+    get_from_dict(dict, key, |value_ref| unsafe {
+        let mut val = T::default();
+        CFNumberGetValue(value_ref.cast(), conversion_const, (&raw mut val).cast());
+        val
+    })
+}
+
+fn get_boolean_from_dict(dict: CFDictionaryRef, key: &str) -> Result<bool, &'static str> {
+    get_from_dict(dict, key, |value_ref| unsafe {
+        CFBooleanGetValue(value_ref.cast())
+    })
+}
+
+fn get_string_from_dict(dict: CFDictionaryRef, key: &str) -> Result<String, &'static str> {
+    get_from_dict(dict, key, |value_ref| unsafe {
+        CFString::wrap_under_get_rule(value_ref.cast()).to_string()
+    })
+}
+
+fn get_from_dict<T, F>(dict: CFDictionaryRef, key: &str, conv: F) -> Result<T, &'static str>
+where
+    F: FnOnce(CFTypeRef) -> T,
+{
+    let mut val_ref: CFTypeRef = std::ptr::null_mut();
+    if unsafe {
+        CFDictionaryGetValueIfPresent(dict, CFString::new(key).to_void(), &raw mut val_ref)
+    } != 1
+    {
+        return Err("failed to get");
+    }
+
+    Ok(conv(val_ref))
+}
+
+impl TryFrom<CFDictionaryRef> for Window {
+    type Error = &'static str;
+    fn try_from(dict: CFDictionaryRef) -> Result<Self, Self::Error> {
+        // Allow this to make it consistent with constants imported from
+        // core_foundation.
+        #[allow(non_upper_case_globals)]
+        const kCGWindowIDCFNumberType: CFNumberType = kCFNumberLongLongType;
+
+        let layer = get_number_from_dict(dict, Self::LAYER_DICTIONARY_KEY, kCFNumberIntType)?;
+        let mem = get_number_from_dict::<u64>(
+            dict,
+            Self::MEMORY_USAGE_BYTES_DICTIONARY_KEY,
+            kCFNumberLongLongType,
+        )?;
+        let number = get_number_from_dict::<u64>(
+            dict,
+            Self::NUMBER_DICTIONARY_KEY,
+            kCGWindowIDCFNumberType,
+        )?;
+        let alpha =
+            get_number_from_dict::<f32>(dict, Self::ALPHA_DICTIONARY_KEY, kCFNumberFloatType)?;
+        let owner_pid =
+            get_number_from_dict::<i32>(dict, Self::OWNER_PID_DICTIONARY_KEY, kCFNumberIntType)?;
+        let owner_name = get_string_from_dict(dict, Self::OWNER_NAME_DICTIONARY_KEY).ok();
+        let name = get_string_from_dict(dict, Self::NAME_DICTIONARY_KEY).ok();
+        let is_on_screen = get_boolean_from_dict(dict, Self::IS_ON_SCREEN_DICTIONARY_KEY).ok();
+
+        let sharing_state = get_number_from_dict::<u32>(
+            dict,
+            Self::SHARING_STATE_DICTIONARY_KEY,
+            kCFNumberIntType,
+        )? as CGWindowSharingType;
+        let store_type =
+            get_number_from_dict::<u32>(dict, Self::STORE_TYPE_DICTIONARY_KEY, kCFNumberIntType)?
+                as CGWindowBackingType;
+
+        let mut val_ref: CFTypeRef = std::ptr::null_mut();
+        if unsafe {
+            CFDictionaryGetValueIfPresent(
+                dict,
+                CFString::new(Self::BOUNDS_DICTIONARY_KEY).to_void(),
+                &mut val_ref,
+            )
+        } != 1
+        {
+            return Err("failed to get");
+        }
+
+        let bounds_dict: CFDictionary =
+            unsafe { CFDictionary::wrap_under_get_rule(val_ref.cast()) };
+
+        let bounds = CGRect::from_dict_representation(&bounds_dict).expect("could not get bounds");
+
+        Ok(Self {
+            alpha: UnitFloat::new(alpha).expect("invalid alpha"),
+            bounds: bounds.into(),
+            is_on_screen,
+            layer,
+            memory_usage_bytes: mem,
+            name,
+            number,
+            owner_name,
+            owner_pid: owner_pid as libc::pid_t,
+            sharing_state: sharing_state.try_into()?,
+            store_type: store_type.try_into()?,
+        })
+    }
+}
+
+#[derive(Debug)]
 pub enum StoreType {
     Retained,
     NonRetained,
@@ -99,6 +265,7 @@ impl From<StoreType> for CGWindowBackingType {
     }
 }
 
+#[derive(Debug)]
 pub enum SharingState {
     None,
     ReadOnly,
@@ -133,9 +300,36 @@ impl From<SharingState> for CGWindowSharingType {
 }
 
 #[allow(dead_code)]
+#[derive(Debug)]
 pub struct Bounds {
     height: f64,
     width: f64,
     x: f64,
     y: f64,
+}
+
+impl Bounds {
+    pub fn overlapping_area(a: &Bounds, b: &Bounds) -> f64 {
+        let ix = a.x.max(b.x);
+        let iy = a.y.max(b.y);
+        let iw = (a.x + a.width).min(b.x + b.width) - ix;
+        let ih = (a.y + a.height).min(b.y + b.height) - iy;
+
+        if iw > 0.0 && ih > 0.0 {
+            iw * ih
+        } else {
+            0.0
+        }
+    }
+}
+
+impl From<CGRect> for Bounds {
+    fn from(value: CGRect) -> Self {
+        Self {
+            height: value.size.height,
+            width: value.size.width,
+            x: value.origin.x,
+            y: value.origin.y,
+        }
+    }
 }
