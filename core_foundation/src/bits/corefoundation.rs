@@ -67,7 +67,7 @@ enum CFStringEncoding {
     NextStepLatin = 0x0B01,
     Ascii = 0x0600,
     Unicode = 0x0100,
-    Utf8 = 0x08000100,
+    Utf8 = 0x0800_0100,
     NonLossyAscii = 0x0BFF,
 }
 
@@ -111,9 +111,10 @@ impl TryFrom<bool> for CFTypeRef {
     type Error = Error;
 
     fn try_from(value: bool) -> std::result::Result<Self, Self::Error> {
-        Ok(match value {
-            true => CFTypeRef(unsafe { kCFBooleanTrue }),
-            false => CFTypeRef(unsafe { kCFBooleanFalse }),
+        Ok(if value {
+            CFTypeRef(unsafe { kCFBooleanTrue })
+        } else {
+            CFTypeRef(unsafe { kCFBooleanFalse })
         })
     }
 }
@@ -154,14 +155,14 @@ impl TryFrom<CFTypeRef> for &str {
         let success = unsafe {
             CFStringGetCString(
                 value.0 as CFStringRef,
-                buffer.as_mut_ptr() as *mut c_char,
+                buffer.as_mut_ptr().cast(),
                 max_size,
                 CFStringEncoding::Utf8,
             )
         };
 
         if success {
-            let cstr = unsafe { CStr::from_ptr(buffer.as_ptr() as *const c_char) };
+            let cstr = unsafe { CStr::from_ptr(buffer.as_ptr().cast()) };
             cstr.to_str().map_err(Error::InvalidCString)
         } else {
             // TODO: specific error type
@@ -206,14 +207,14 @@ impl TryFrom<CFTypeRef> for String {
         let success = unsafe {
             CFStringGetCString(
                 value.0 as CFStringRef,
-                buffer.as_mut_ptr() as *mut c_char,
+                buffer.as_mut_ptr().cast(),
                 max_size,
                 CFStringEncoding::Utf8,
             )
         };
 
         if success {
-            let cstr = unsafe { CStr::from_ptr(buffer.as_ptr() as *const c_char) };
+            let cstr = unsafe { CStr::from_ptr(buffer.as_ptr().cast()) };
             cstr.to_str()
                 .map(String::from)
                 .map_err(Error::InvalidCString)
@@ -237,7 +238,7 @@ pub fn cf_type_ref_to_num<T: Default>(cf: CFTypeRef, type_: CFNumberType) -> Res
         CFNumberGetValue(
             cf.0 as CFNumberRef,
             type_, // TODO: needs constants or enum values
-            &mut out as *mut _ as *mut c_void,
+            (&raw mut out).cast(),
         )
     };
 
