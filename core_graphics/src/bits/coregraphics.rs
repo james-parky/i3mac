@@ -1,6 +1,5 @@
-use crate::bits::corefoundation::CFArrayRef;
-use crate::bits::CFNumberType;
 use crate::Error;
+use core_foundation::{cf_type_ref_to_num, CFArrayRef, CFNumberType, CFTypeRef};
 use std::ffi::{c_int, c_uint};
 use std::ops::BitOr;
 
@@ -88,17 +87,19 @@ pub enum StoreType {
     Buffered = 2,
 }
 
-impl TryFrom<crate::bits::CFTypeRef> for SharingType {
+impl TryFrom<CFTypeRef> for SharingType {
     type Error = Error;
-    fn try_from(value: crate::bits::CFTypeRef) -> std::result::Result<Self, Self::Error> {
-        crate::bits::cf_type_ref_to_num(value, CFNumberType::INT32)
+    fn try_from(value: CFTypeRef) -> std::result::Result<Self, Self::Error> {
+        // TODO: more specific error?
+        cf_type_ref_to_num(value, CFNumberType::INT32).map_err(Error::CoreFoundation)
     }
 }
 
-impl TryFrom<crate::bits::CFTypeRef> for StoreType {
+impl TryFrom<CFTypeRef> for StoreType {
     type Error = Error;
-    fn try_from(value: crate::bits::CFTypeRef) -> std::result::Result<Self, Self::Error> {
-        crate::bits::cf_type_ref_to_num(value, CFNumberType::INT32)
+    fn try_from(value: CFTypeRef) -> std::result::Result<Self, Self::Error> {
+        // TODO: more specific error?
+        cf_type_ref_to_num(value, CFNumberType::INT32).map_err(Error::CoreFoundation)
     }
 }
 

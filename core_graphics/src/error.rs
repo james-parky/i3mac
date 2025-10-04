@@ -20,6 +20,7 @@ pub enum Error {
     CannotCreateCString(NulError),
     NulString,
     InvalidCString(Utf8Error),
+    CoreFoundation(core_foundation::Error),
 }
 
 impl From<bits::CGError> for Option<Error> {

@@ -1,7 +1,7 @@
 use crate::Error;
 use crate::Result;
 
-use std::ffi::{c_char, c_ulong, c_void, CStr, CString};
+use std::ffi::{CStr, CString, c_char, c_ulong, c_void};
 
 pub type CFArrayRef = *const CFArray;
 pub type CFArray = c_void;
@@ -20,7 +20,7 @@ type CFAllocatorRef = *const c_void;
 type CFStringRef = *const c_void;
 
 #[link(name = "ApplicationServices", kind = "framework")]
-extern "C" {
+unsafe extern "C" {
     pub fn CFArrayGetCount(array: CFArrayRef) -> CFIndex;
     pub fn CFArrayGetValueAtIndex(array: CFArrayRef, index: CFIndex) -> *const c_void;
     pub fn CFDictionaryGetCount(dictionary: CFDictionaryRef) -> CFIndex;

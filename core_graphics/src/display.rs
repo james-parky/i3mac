@@ -1,7 +1,6 @@
 use crate::bits::{CGDisplayBounds, CGError, CGGetActiveDisplayList};
-use crate::coregraphics::{Bounds, DisplayId};
 use crate::window::Window;
-use crate::Error;
+use crate::{Bounds, DisplayId, Error};
 use std::collections::HashMap;
 use std::ffi::c_uint;
 

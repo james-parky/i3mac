@@ -1,0 +1,8 @@
+[package]
+name = "core_graphics"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+core_foundation = { path = "../core_foundation" }
+libc = "0.2.176"

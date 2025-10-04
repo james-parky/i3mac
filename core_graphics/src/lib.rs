@@ -1,6 +1,15 @@
-use crate::bits::{CFDictionaryRef, CFTypeRef, CGDirectDisplayID, CGPoint, CGRect, CGSize};
-use crate::dictionary::Dictionary;
-use crate::{Error, Result};
+mod bits;
+mod display;
+mod error;
+mod window;
+
+use core_foundation::{CFDictionaryRef, CFTypeRef, Dictionary};
+pub use display::*;
+
+use crate::bits::{CGDirectDisplayID, CGPoint, CGRect, CGSize};
+pub use error::Error;
+
+pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 #[allow(dead_code)]
@@ -66,7 +75,8 @@ impl TryFrom<CFTypeRef> for CGRect {
             return Err(Error::NulString);
         }
         let dict: CFDictionaryRef = value.0 as CFDictionaryRef;
-        let d = Dictionary::try_from(dict)?;
+        // TODO: more specific?
+        let d = Dictionary::try_from(dict).map_err(Error::CoreFoundation)?;
 
         // TODO: proper errors
         let x: f64 = d.get(&"X").ok_or(Error::NulString)?;

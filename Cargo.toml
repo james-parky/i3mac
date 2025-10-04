@@ -1,7 +1,4 @@
-[package]
-name = "i3mac"
-version = "0.1.0"
-edition = "2021"
+[workspace]
+members = ["core_foundation", "core_graphics", "main"]
 
-[dependencies]
-libc = "0.2.176"
+default-members = ["main"]
