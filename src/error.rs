@@ -1,4 +1,6 @@
 use crate::bits;
+use std::ffi::NulError;
+use std::str::Utf8Error;
 
 #[derive(Debug)]
 pub enum Error {
@@ -14,6 +16,10 @@ pub enum Error {
     TypeCheck,
     UnknownCGError(bits::CGError),
     NullActiveDisplay,
+    NullCFArray,
+    CannotCreateCString(NulError),
+    NulString,
+    InvalidCString(Utf8Error),
 }
 
 impl From<bits::CGError> for Option<Error> {

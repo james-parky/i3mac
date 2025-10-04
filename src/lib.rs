@@ -1,7 +1,9 @@
 mod bits;
 pub mod coregraphics;
+mod dictionary;
+pub mod display;
 mod error;
-mod window;
+pub mod window;
 
 pub use error::Error;
 use std::result;

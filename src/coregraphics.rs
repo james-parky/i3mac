@@ -1,8 +1,8 @@
-use crate::bits::{CGDirectDisplayID, CGDisplayBounds, CGError, CGGetActiveDisplayList, CGRect};
-use crate::Result;
-use std::ffi::c_uint;
+use crate::bits::{CFDictionaryRef, CFTypeRef, CGDirectDisplayID, CGPoint, CGRect, CGSize};
+use crate::dictionary::Dictionary;
+use crate::{Error, Result};
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 #[allow(dead_code)]
 pub struct DisplayId(u32);
 
@@ -12,33 +12,16 @@ impl From<CGDirectDisplayID> for DisplayId {
     }
 }
 
-pub fn active_display_ids() -> Result<Vec<DisplayId>> {
-    const MAX_DISPLAY_COUNT: u32 = 16;
-
-    let mut active_displays = [0; MAX_DISPLAY_COUNT as usize];
-    let mut display_count: c_uint = 0;
-
-    let cg_err = unsafe {
-        CGGetActiveDisplayList(
-            MAX_DISPLAY_COUNT,
-            active_displays.as_mut_ptr(),
-            &mut display_count,
-        )
-    };
-
-    if let Some(err) = CGError(cg_err).into() {
-        Err(err)
-    } else {
-        Ok(active_displays
-            .into_iter()
-            .take(display_count as usize)
-            .map(DisplayId)
-            .collect())
+impl From<DisplayId> for CGDirectDisplayID {
+    fn from(id: DisplayId) -> Self {
+        id.0
     }
 }
 
-pub fn display_bounds(id: DisplayId) -> Bounds {
-    unsafe { CGDisplayBounds(id.0) }.into()
+impl From<usize> for DisplayId {
+    fn from(id: usize) -> Self {
+        DisplayId(id as u32)
+    }
 }
 
 #[allow(dead_code)]
@@ -76,13 +59,24 @@ impl From<CGRect> for Bounds {
     }
 }
 
-impl From<core_graphics::display::CGRect> for Bounds {
-    fn from(value: core_graphics::display::CGRect) -> Self {
-        Self {
-            height: value.size.height,
-            width: value.size.width,
-            x: value.origin.x,
-            y: value.origin.y,
+impl TryFrom<CFTypeRef> for CGRect {
+    type Error = Error;
+    fn try_from(value: CFTypeRef) -> Result<Self> {
+        if value.0.is_null() {
+            return Err(Error::NulString);
         }
+        let dict: CFDictionaryRef = value.0 as CFDictionaryRef;
+        let d = Dictionary::try_from(dict)?;
+
+        // TODO: proper errors
+        let x: f64 = d.get(&"X").ok_or(Error::NulString)?;
+        let y: f64 = d.get(&"Y").ok_or(Error::NulString)?;
+        let width: f64 = d.get(&"Width").ok_or(Error::NulString)?;
+        let height: f64 = d.get(&"Height").ok_or(Error::NulString)?;
+
+        Ok(CGRect {
+            origin: CGPoint { x, y },
+            size: CGSize { width, height },
+        })
     }
 }

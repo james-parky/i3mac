@@ -1,4 +1,8 @@
+use crate::bits::corefoundation::CFArrayRef;
+use crate::bits::CFNumberType;
+use crate::Error;
 use std::ffi::{c_int, c_uint};
+use std::ops::BitOr;
 
 pub type CGDirectDisplayID = c_uint;
 
@@ -23,18 +27,21 @@ impl CGError {
 pub type CGFloat = f64;
 
 #[repr(C)]
+#[derive(Debug)]
 pub struct CGPoint {
     pub x: CGFloat,
     pub y: CGFloat,
 }
 
 #[repr(C)]
+#[derive(Debug)]
 pub struct CGSize {
     pub width: CGFloat,
     pub height: CGFloat,
 }
 
 #[repr(C)]
+#[derive(Debug)]
 pub struct CGRect {
     pub origin: CGPoint,
     pub size: CGSize,
@@ -52,4 +59,72 @@ extern "C" {
     ) -> c_int;
 
     pub fn CGDisplayBounds(display: CGDirectDisplayID) -> CGRect;
+
+    pub fn CGWindowListCopyWindowInfo(
+        option: WindowListOption,
+        relative_to_window: WindowId,
+    ) -> CFArrayRef;
+}
+
+#[derive(Debug, Default)]
+#[repr(u32)]
+// Created as part of the Core Graphics ffi; yet are unused.
+#[allow(dead_code)]
+pub enum SharingType {
+    #[default]
+    None = 0,
+    ReadOnly = 1,
+    ReadWrite = 2,
+}
+
+#[derive(Debug, Default)]
+#[repr(u32)]
+// Created as part of the Core Graphics ffi; yet are unused.
+#[allow(dead_code)]
+pub enum StoreType {
+    #[default]
+    Retained = 0,
+    NonRetained = 1,
+    Buffered = 2,
+}
+
+impl TryFrom<crate::bits::CFTypeRef> for SharingType {
+    type Error = Error;
+    fn try_from(value: crate::bits::CFTypeRef) -> std::result::Result<Self, Self::Error> {
+        crate::bits::cf_type_ref_to_num(value, CFNumberType::INT32)
+    }
+}
+
+impl TryFrom<crate::bits::CFTypeRef> for StoreType {
+    type Error = Error;
+    fn try_from(value: crate::bits::CFTypeRef) -> std::result::Result<Self, Self::Error> {
+        crate::bits::cf_type_ref_to_num(value, CFNumberType::INT32)
+    }
+}
+
+// Core Graphics describes this as an enum, but Rust does not allow for BitOr
+// between enum variants, so we use a new-type wrapper around a c_uint and
+// provide constants for what the enum variants would have been.
+#[repr(transparent)]
+pub struct WindowListOption(c_uint);
+impl WindowListOption {
+    // pub const ALL: Self = Self(0);
+    pub const ON_SCREEN_ONLY: Self = Self(1);
+    // pub const ON_SCREEN_ABOVE_WINDOW: Self = Self(2);
+    // pub const ON_SCREEN_BELOW_WINDOW: Self = Self(4);
+    // pub const INCLUDING_WINDOW: Self = Self(8);
+    pub const EXCLUDE_DESKTOP_ELEMENTS: Self = Self(16);
+}
+
+impl BitOr for WindowListOption {
+    type Output = Self;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        Self((self.0) | (rhs.0))
+    }
+}
+
+#[repr(u32)]
+pub enum WindowId {
+    Null = 0,
 }

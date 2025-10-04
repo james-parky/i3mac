@@ -1,17 +1,13 @@
-use core_foundation::base::{TCFType, ToVoid};
-
-use core_graphics::window::{
-    kCGWindowBackingStoreBuffered as K_CG_WINDOW_BACKING_STORE_BUFFERED,
-    kCGWindowBackingStoreNonretained as K_CG_WINDOW_BACKING_STORE_NON_RETAINED,
-    kCGWindowBackingStoreRetained as K_CG_WINDOW_BACKING_STORE_RETAINED, CGWindowBackingType,
-    CGWindowSharingType,
-};
-
-use core_graphics::window::{
-    kCGWindowSharingNone as K_CG_WINDOW_SHARING_NONE,
-    kCGWindowSharingReadOnly as K_CG_WINDOW_SHARING_READ_ONLY,
-    kCGWindowSharingReadWrite as K_CG_WINDOW_SHARING_READ_WRITE,
-};
+use crate::bits::CGWindowListCopyWindowInfo;
+use crate::bits::{CFArrayGetCount, WindowId, WindowListOption};
+use crate::bits::{CFArrayGetValueAtIndex, CGRect};
+use crate::bits::{CFDictionaryRef, SharingType, StoreType};
+use crate::coregraphics::{Bounds, DisplayId};
+use crate::dictionary::Dictionary;
+use crate::display::Display;
+use crate::Error;
+use crate::Result;
+use std::collections::HashMap;
 
 #[derive(Debug)]
 pub struct UnitFloat(f32);
@@ -41,7 +37,7 @@ pub struct Window {
     bounds: Bounds,
     /// Whether the window is currently onscreen.
     is_on_screen: Option<bool>,
-    /// The window layer number.
+    // The window layer number.
     layer: i32,
     /// An estimate of the amount of memory (measured in bytes) used by the
     /// window and its supporting data structures.
@@ -56,19 +52,10 @@ pub struct Window {
     /// The process ID of the applications that owns the window.
     owner_pid: libc::pid_t,
     /// Specifies whether and how windows are shared between applications.
-    sharing_state: SharingState,
+    sharing_state: SharingType,
     /// Specifies how the window device buffers drawing commands.
     store_type: StoreType,
 }
-
-use crate::coregraphics::{active_display_ids, display_bounds, Bounds, DisplayId};
-use core_foundation::base::CFTypeRef;
-use core_foundation::dictionary::{CFDictionary, CFDictionaryGetValueIfPresent, CFDictionaryRef};
-use core_foundation::number::{
-    kCFNumberFloatType, kCFNumberIntType, kCFNumberLongLongType, CFBooleanGetValue,
-    CFNumberGetValue, CFNumberType,
-};
-use core_foundation::string::CFString;
 
 #[allow(dead_code)]
 impl Window {
@@ -76,14 +63,35 @@ impl Window {
         self.layer == 0
     }
 
-    pub fn get_display_id(&self) -> crate::Result<Option<DisplayId>> {
-        let ids = active_display_ids()?;
+    pub fn all_windows() -> Result<Vec<Window>> {
+        let array_ref = unsafe {
+            CGWindowListCopyWindowInfo(
+                WindowListOption::EXCLUDE_DESKTOP_ELEMENTS | WindowListOption::ON_SCREEN_ONLY,
+                WindowId::Null,
+            )
+        };
 
+        if array_ref.is_null() {
+            // TODO: more specific error
+            return Err(Error::NullCFArray);
+        }
+
+        Ok((0..unsafe { CFArrayGetCount(array_ref) })
+            .filter_map(|i| Window::try_from(unsafe { CFArrayGetValueAtIndex(array_ref, i) }).ok())
+            .filter(|w| w.is_on_screen.is_some_and(|is| is))
+            .filter(Window::is_user_application)
+            .collect())
+    }
+
+    pub fn get_display_id(
+        &self,
+        ds: &HashMap<DisplayId, Display>,
+    ) -> crate::Result<Option<DisplayId>> {
         let mut best: Option<DisplayId> = None;
         let mut max_area = 0.0;
 
-        for id in &ids {
-            let area = Bounds::overlapping_area(&self.bounds, &display_bounds(*id));
+        for (id, disp) in ds {
+            let area = Bounds::overlapping_area(&self.bounds, &disp.bounds);
             if area > max_area {
                 max_area = area;
                 best = Some(*id);
@@ -94,71 +102,10 @@ impl Window {
     }
 }
 
-fn get_number_from_dict<T: Default>(
-    dict: CFDictionaryRef,
-    key: &str,
-    conversion_const: u32,
-) -> std::result::Result<T, &'static str> {
-    get_from_dict(dict, key, |value_ref| unsafe {
-        let mut val = T::default();
-        CFNumberGetValue(value_ref.cast(), conversion_const, (&raw mut val).cast());
-        val
-    })
-}
-
-fn get_boolean_from_dict(
-    dict: CFDictionaryRef,
-    key: &str,
-) -> std::result::Result<bool, &'static str> {
-    get_from_dict(dict, key, |value_ref| unsafe {
-        CFBooleanGetValue(value_ref.cast())
-    })
-}
-
-fn get_string_from_dict(
-    dict: CFDictionaryRef,
-    key: &str,
-) -> std::result::Result<String, &'static str> {
-    get_from_dict(dict, key, |value_ref| unsafe {
-        CFString::wrap_under_get_rule(value_ref.cast()).to_string()
-    })
-}
-
-fn get_bounds_from_dict(
-    dict: CFDictionaryRef,
-    key: &str,
-) -> std::result::Result<Bounds, &'static str> {
-    get_from_dict(dict, key, |value_ref| {
-        let bounds_dict: CFDictionary =
-            unsafe { CFDictionary::wrap_under_get_rule(value_ref.cast()) };
-
-        core_graphics::display::CGRect::from_dict_representation(&bounds_dict)
-            .expect("could not get bounds")
-            .into()
-    })
-}
-
-fn get_from_dict<T, F>(
-    dict: CFDictionaryRef,
-    key: &str,
-    conv: F,
-) -> std::result::Result<T, &'static str>
-where
-    F: FnOnce(CFTypeRef) -> T,
-{
-    let mut val_ref: CFTypeRef = std::ptr::null_mut();
-    if unsafe {
-        CFDictionaryGetValueIfPresent(dict, CFString::new(key).to_void(), &raw mut val_ref)
-    } != 1
-    {
-        return Err("failed to get");
-    }
-
-    Ok(conv(val_ref))
-}
-
 impl TryFrom<CFDictionaryRef> for Window {
+    // TODO: proper error type
     type Error = &'static str;
+
     fn try_from(dict: CFDictionaryRef) -> std::result::Result<Self, Self::Error> {
         const ALPHA_DICTIONARY_KEY: &str = "kCGWindowAlpha";
         const BOUNDS_DICTIONARY_KEY: &str = "kCGWindowBounds";
@@ -172,106 +119,39 @@ impl TryFrom<CFDictionaryRef> for Window {
         const SHARING_STATE_DICTIONARY_KEY: &str = "kCGWindowSharingState";
         const STORE_TYPE_DICTIONARY_KEY: &str = "kCGWindowStoreType";
 
-        // Allow this to make it consistent with constants imported from
-        // core_foundation.
-        #[allow(non_upper_case_globals)]
-        const kCGWindowIDCFNumberType: CFNumberType = kCFNumberLongLongType;
-
-        let alpha = get_number_from_dict(dict, ALPHA_DICTIONARY_KEY, kCFNumberFloatType)?;
+        let dictionary = Dictionary::try_from(dict).map_err(|_| "could not make dictionary")?;
 
         Ok(Self {
-            alpha: UnitFloat::new(alpha).expect("invalid alpha"),
-            bounds: get_bounds_from_dict(dict, BOUNDS_DICTIONARY_KEY)?,
-            is_on_screen: get_boolean_from_dict(dict, IS_ON_SCREEN_DICTIONARY_KEY).ok(),
-            layer: get_number_from_dict(dict, LAYER_DICTIONARY_KEY, kCFNumberIntType)?,
-            memory_usage_bytes: get_number_from_dict(
-                dict,
-                MEMORY_USAGE_BYTES_DICTIONARY_KEY,
-                kCFNumberLongLongType,
-            )?,
-            name: get_string_from_dict(dict, NAME_DICTIONARY_KEY).ok(),
-            number: get_number_from_dict(dict, NUMBER_DICTIONARY_KEY, kCGWindowIDCFNumberType)?,
-            owner_name: get_string_from_dict(dict, OWNER_NAME_DICTIONARY_KEY).ok(),
-            owner_pid: get_number_from_dict::<libc::pid_t>(
-                dict,
-                OWNER_PID_DICTIONARY_KEY,
-                kCFNumberIntType,
-            )?,
-            sharing_state: get_number_from_dict::<CGWindowSharingType>(
-                dict,
-                SHARING_STATE_DICTIONARY_KEY,
-                kCFNumberIntType,
-            )?
-            .try_into()?,
-            store_type: get_number_from_dict::<CGWindowBackingType>(
-                dict,
-                STORE_TYPE_DICTIONARY_KEY,
-                kCFNumberIntType,
-            )?
-            .try_into()?,
+            alpha: UnitFloat(
+                dictionary
+                    .get(&ALPHA_DICTIONARY_KEY)
+                    .ok_or("could not get alpha")?,
+            ),
+            bounds: dictionary
+                .get::<&str, CGRect>(&BOUNDS_DICTIONARY_KEY)
+                .ok_or("could not get bounds")?
+                .into(),
+            is_on_screen: dictionary.get(&IS_ON_SCREEN_DICTIONARY_KEY),
+            layer: dictionary
+                .get(&LAYER_DICTIONARY_KEY)
+                .ok_or("could not get layer")?,
+            memory_usage_bytes: dictionary
+                .get(&MEMORY_USAGE_BYTES_DICTIONARY_KEY)
+                .ok_or("could not get memory usage")?,
+            name: dictionary.get(&NAME_DICTIONARY_KEY),
+            number: dictionary
+                .get(&NUMBER_DICTIONARY_KEY)
+                .ok_or("could not get number")?,
+            owner_name: dictionary.get(&OWNER_NAME_DICTIONARY_KEY),
+            owner_pid: dictionary
+                .get(&OWNER_PID_DICTIONARY_KEY)
+                .ok_or("could not get owner pid")?,
+            sharing_state: dictionary
+                .get(&SHARING_STATE_DICTIONARY_KEY)
+                .ok_or("could not get sharing state")?,
+            store_type: dictionary
+                .get(&STORE_TYPE_DICTIONARY_KEY)
+                .ok_or("could not get store type")?,
         })
-    }
-}
-
-#[derive(Debug)]
-pub enum StoreType {
-    Retained,
-    NonRetained,
-    Buffered,
-}
-
-impl TryFrom<CGWindowBackingType> for StoreType {
-    type Error = &'static str;
-    fn try_from(value: CGWindowBackingType) -> std::result::Result<Self, Self::Error> {
-        match value {
-            K_CG_WINDOW_BACKING_STORE_RETAINED => Ok(StoreType::Retained),
-            K_CG_WINDOW_BACKING_STORE_NON_RETAINED => Ok(StoreType::NonRetained),
-            K_CG_WINDOW_BACKING_STORE_BUFFERED => Ok(StoreType::Buffered),
-            _ => Err("unknown window backing store: {value:?}"),
-        }
-    }
-}
-
-impl From<StoreType> for CGWindowBackingType {
-    fn from(value: StoreType) -> Self {
-        match value {
-            StoreType::Retained => K_CG_WINDOW_BACKING_STORE_RETAINED,
-            StoreType::NonRetained => K_CG_WINDOW_BACKING_STORE_NON_RETAINED,
-            StoreType::Buffered => K_CG_WINDOW_BACKING_STORE_BUFFERED,
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum SharingState {
-    None,
-    ReadOnly,
-    ReadWrite,
-}
-
-impl TryFrom<CGWindowSharingType> for SharingState {
-    type Error = &'static str;
-    fn try_from(value: CGWindowSharingType) -> std::result::Result<Self, Self::Error> {
-        // There are three available constants regarding window sharing
-        // state. I don't know why ReadOnly and ReadWrite are the same, but
-        // I ignore it in case it changes.
-        #[allow(clippy::match_overlapping_arm)]
-        match value {
-            K_CG_WINDOW_SHARING_NONE => Ok(SharingState::None),
-            K_CG_WINDOW_SHARING_READ_ONLY => Ok(SharingState::ReadOnly),
-            #[allow(unreachable_patterns)]
-            K_CG_WINDOW_SHARING_READ_WRITE => Ok(SharingState::ReadWrite),
-            _ => Err("unknown window sharing state: {value:?}"),
-        }
-    }
-}
-
-impl From<SharingState> for CGWindowSharingType {
-    fn from(value: SharingState) -> Self {
-        match value {
-            SharingState::None => K_CG_WINDOW_SHARING_NONE,
-            SharingState::ReadOnly => K_CG_WINDOW_SHARING_READ_ONLY,
-            SharingState::ReadWrite => K_CG_WINDOW_SHARING_READ_WRITE,
-        }
     }
 }
