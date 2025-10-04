@@ -1,6 +1,5 @@
-use crate::bits::corefoundation::CFArrayRef;
-use crate::bits::CFNumberType;
 use crate::Error;
+use core_foundation::{CFArrayRef, CFNumberType, CFTypeRef, cf_type_ref_to_num};
 use std::ffi::{c_int, c_uint};
 use std::ops::BitOr;
 
@@ -48,7 +47,7 @@ pub struct CGRect {
 }
 
 #[link(name = "ApplicationServices", kind = "framework")]
-extern "C" {
+unsafe extern "C" {
     // Documentation states this returns a CGError (int32_t) but it is better to
     // return a c_int here and cast it to the above _custom_ CGError to make it
     // easier to convert to Errors or Results.
@@ -88,17 +87,19 @@ pub enum StoreType {
     Buffered = 2,
 }
 
-impl TryFrom<crate::bits::CFTypeRef> for SharingType {
+impl TryFrom<CFTypeRef> for SharingType {
     type Error = Error;
-    fn try_from(value: crate::bits::CFTypeRef) -> std::result::Result<Self, Self::Error> {
-        crate::bits::cf_type_ref_to_num(value, CFNumberType::INT32)
+    fn try_from(value: CFTypeRef) -> std::result::Result<Self, Self::Error> {
+        // TODO: more specific error?
+        cf_type_ref_to_num(value, CFNumberType::INT32).map_err(Error::CoreFoundation)
     }
 }
 
-impl TryFrom<crate::bits::CFTypeRef> for StoreType {
+impl TryFrom<CFTypeRef> for StoreType {
     type Error = Error;
-    fn try_from(value: crate::bits::CFTypeRef) -> std::result::Result<Self, Self::Error> {
-        crate::bits::cf_type_ref_to_num(value, CFNumberType::INT32)
+    fn try_from(value: CFTypeRef) -> std::result::Result<Self, Self::Error> {
+        // TODO: more specific error?
+        cf_type_ref_to_num(value, CFNumberType::INT32).map_err(Error::CoreFoundation)
     }
 }
 

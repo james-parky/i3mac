@@ -35,6 +35,7 @@ impl TryFrom<CFDictionaryRef> for Dictionary {
             // TODO: proper error value
             return Err(Error::NulString);
         }
+
         let size: u64 = unsafe { CFDictionaryGetCount(dict) };
 
         let mut keys: Vec<*const c_void> = vec![std::ptr::null(); size as usize];

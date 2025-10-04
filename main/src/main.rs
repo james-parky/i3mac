@@ -1,4 +1,4 @@
-use i3mac::display::Display;
+use core_graphics::Display;
 
 fn main() {
     match Display::all() {

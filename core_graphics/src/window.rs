@@ -1,12 +1,11 @@
-use crate::bits::CGWindowListCopyWindowInfo;
-use crate::bits::{CFArrayGetCount, WindowId, WindowListOption};
-use crate::bits::{CFArrayGetValueAtIndex, CGRect};
-use crate::bits::{CFDictionaryRef, SharingType, StoreType};
-use crate::coregraphics::{Bounds, DisplayId};
-use crate::dictionary::Dictionary;
-use crate::display::Display;
-use crate::Error;
-use crate::Result;
+use crate::{
+    bits::{
+        CGRect, CGWindowListCopyWindowInfo, SharingType, StoreType, WindowId, WindowListOption,
+    },
+    display::Display,
+    Bounds, DisplayId, Error, Result,
+};
+use core_foundation::{CFArrayGetCount, CFArrayGetValueAtIndex, CFDictionaryRef, Dictionary};
 use std::collections::HashMap;
 
 #[derive(Debug)]
