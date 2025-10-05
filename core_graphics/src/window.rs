@@ -79,22 +79,13 @@ impl Window {
             .collect())
     }
 
-    pub fn get_display_id(
-        &self,
-        ds: &HashMap<DisplayId, Display>,
-    ) -> crate::Result<Option<DisplayId>> {
-        let mut best: Option<DisplayId> = None;
-        let mut max_area = 0.0;
-
-        for (id, disp) in ds {
-            let area = Bounds::overlapping_area(&self.bounds, &disp.bounds);
-            if area > max_area {
-                max_area = area;
-                best = Some(*id);
-            }
-        }
-
-        Ok(best)
+    pub fn get_display_id(&self, ds: &HashMap<DisplayId, Display>) -> Option<DisplayId> {
+        ds.iter()
+            .map(|(id, display)| (id, Bounds::overlapping_area(&self.bounds, &display.bounds)))
+            .filter(|(_, area)| *area > 0.0)
+            .max_by(|&(_, area_a), &(_, area_b)| f64::total_cmp(&area_a, &area_b))
+            .map(|(id, _)| id)
+            .copied()
     }
 }
 

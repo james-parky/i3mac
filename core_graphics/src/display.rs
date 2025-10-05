@@ -19,14 +19,12 @@ impl Display {
 
         for window in Window::all_windows()? {
             match window.get_display_id(&displays) {
-                Err(err) => return Err(err),
-                // TODO: real error
-                Ok(Some(id)) => displays
+                Some(id) => displays
                     .get_mut(&id)
                     .ok_or(Error::NulString)?
                     .windows
                     .push(window),
-                Ok(None) => {} // window could not be assigned to a screen; assume it is off-screen
+                None => {} // window could not be assigned to a screen; assume it is off-screen
             }
         }
 
