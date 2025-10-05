@@ -3,31 +3,25 @@ use crate::{CFArrayGetCount, CFArrayGetValueAtIndex, CFArrayRef, CFIndex, CFType
 
 pub struct Array<T: TryFrom<CFTypeRef, Error = Error>>(Vec<T>);
 
-impl<T> Array<T>
+impl<T> TryFrom<CFArrayRef> for Array<T>
 where
     T: TryFrom<CFTypeRef, Error = Error>,
 {
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    pub fn try_create(array_ref: CFArrayRef) -> Result<Array<T>> {
-        if array_ref.is_null() {
+    type Error = Error;
+    fn try_from(array: CFArrayRef) -> Result<Array<T>> {
+        if array.is_null() {
             // TODO: real error
             return Err(Error::NulString);
         }
 
-        let len = unsafe { CFArrayGetCount(array_ref) };
-        let mut vec = Vec::with_capacity(len as usize);
+        let len = unsafe { CFArrayGetCount(array) };
 
-        for i in 0..len as usize {
-            let type_ref = unsafe { CFArrayGetValueAtIndex(array_ref, i as CFIndex) };
-            vec.push(T::try_from(CFTypeRef(type_ref))?);
-        }
+        let vec = (0..len)
+            .map(|i| {
+                let type_ref = unsafe { CFArrayGetValueAtIndex(array, i as CFIndex) };
+                T::try_from(CFTypeRef(type_ref))
+            })
+            .collect::<Result<Vec<T>>>()?;
 
         Ok(Array(vec))
     }

@@ -70,7 +70,7 @@ impl Window {
             )
         };
 
-        Ok(Array::<Dictionary>::try_create(array_ref)
+        Ok(Array::<Dictionary>::try_from(array_ref)
             .map_err(Error::CoreFoundation)?
             .into_iter()
             .filter_map(|dict| Window::try_from(dict).ok())
