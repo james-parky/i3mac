@@ -56,6 +56,14 @@ pub struct Window {
     store_type: StoreType,
 }
 
+macro_rules! get_or_error {
+    ($dict: expr, $key: expr) => {
+        $dict
+            .get(&$key)
+            .ok_or(Error::CouldNotFindDictionaryKey($key.into()))?
+    };
+}
+
 #[allow(dead_code)]
 impl Window {
     pub fn is_user_application(&self) -> bool {
@@ -106,9 +114,7 @@ impl TryFrom<Dictionary> for Window {
         const STORE_TYPE_DICTIONARY_KEY: &str = "kCGWindowStoreType";
 
         Ok(Self {
-            alpha: UnitFloat(dictionary.get(&ALPHA_DICTIONARY_KEY).ok_or(
-                Error::CouldNotFindDictionaryKey(ALPHA_DICTIONARY_KEY.into()),
-            )?),
+            alpha: UnitFloat(get_or_error!(dictionary, ALPHA_DICTIONARY_KEY)),
             bounds: dictionary
                 .get::<&str, CGRect>(&BOUNDS_DICTIONARY_KEY)
                 .ok_or(Error::CouldNotFindDictionaryKey(
@@ -116,26 +122,14 @@ impl TryFrom<Dictionary> for Window {
                 ))?
                 .into(),
             is_on_screen: dictionary.get(&IS_ON_SCREEN_DICTIONARY_KEY),
-            layer: dictionary.get(&LAYER_DICTIONARY_KEY).ok_or(
-                Error::CouldNotFindDictionaryKey(LAYER_DICTIONARY_KEY.into()),
-            )?,
-            memory_usage_bytes: dictionary.get(&MEMORY_USAGE_BYTES_DICTIONARY_KEY).ok_or(
-                Error::CouldNotFindDictionaryKey(MEMORY_USAGE_BYTES_DICTIONARY_KEY.into()),
-            )?,
+            layer: get_or_error!(dictionary, LAYER_DICTIONARY_KEY),
+            memory_usage_bytes: get_or_error!(dictionary, MEMORY_USAGE_BYTES_DICTIONARY_KEY),
             name: dictionary.get(&NAME_DICTIONARY_KEY),
-            number: dictionary.get(&NUMBER_DICTIONARY_KEY).ok_or(
-                Error::CouldNotFindDictionaryKey(NUMBER_DICTIONARY_KEY.into()),
-            )?,
+            number: get_or_error!(dictionary, NUMBER_DICTIONARY_KEY),
             owner_name: dictionary.get(&OWNER_NAME_DICTIONARY_KEY),
-            owner_pid: dictionary.get(&OWNER_PID_DICTIONARY_KEY).ok_or(
-                Error::CouldNotFindDictionaryKey(OWNER_PID_DICTIONARY_KEY.into()),
-            )?,
-            sharing_state: dictionary.get(&SHARING_STATE_DICTIONARY_KEY).ok_or(
-                Error::CouldNotFindDictionaryKey(SHARING_STATE_DICTIONARY_KEY.into()),
-            )?,
-            store_type: dictionary.get(&STORE_TYPE_DICTIONARY_KEY).ok_or(
-                Error::CouldNotFindDictionaryKey(STORE_TYPE_DICTIONARY_KEY.into()),
-            )?,
+            owner_pid: get_or_error!(dictionary, OWNER_PID_DICTIONARY_KEY),
+            sharing_state: get_or_error!(dictionary, SHARING_STATE_DICTIONARY_KEY),
+            store_type: get_or_error!(dictionary, STORE_TYPE_DICTIONARY_KEY),
         })
     }
 }
