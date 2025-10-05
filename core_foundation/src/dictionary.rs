@@ -26,6 +26,12 @@ impl Hash for CFKey {
         h.hash(state);
     }
 }
+impl TryFrom<CFTypeRef> for Dictionary {
+    type Error = Error;
+    fn try_from(value: CFTypeRef) -> Result<Self> {
+        Dictionary::try_from(value.0 as CFDictionaryRef)
+    }
+}
 
 impl TryFrom<CFDictionaryRef> for Dictionary {
     type Error = Error;

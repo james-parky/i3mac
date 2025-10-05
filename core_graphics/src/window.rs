@@ -1,11 +1,11 @@
 use crate::{
+    Bounds, DisplayId, Error, Result,
     bits::{
         CGRect, CGWindowListCopyWindowInfo, SharingType, StoreType, WindowId, WindowListOption,
     },
     display::Display,
-    Bounds, DisplayId, Error, Result,
 };
-use core_foundation::{CFArrayGetCount, CFArrayGetValueAtIndex, CFDictionaryRef, Dictionary};
+use core_foundation::{Array, Dictionary};
 use std::collections::HashMap;
 
 #[derive(Debug)]
@@ -75,11 +75,19 @@ impl Window {
             return Err(Error::NullCFArray);
         }
 
-        Ok((0..unsafe { CFArrayGetCount(array_ref) })
-            .filter_map(|i| Window::try_from(unsafe { CFArrayGetValueAtIndex(array_ref, i) }).ok())
-            .filter(|w| w.is_on_screen.is_some_and(|is| is))
-            .filter(Window::is_user_application)
-            .collect())
+        let window_dict_array = Array::try_create(array_ref).map_err(Error::CoreFoundation)?;
+
+        let mut vec = Vec::with_capacity(window_dict_array.len());
+
+        for i in 0..window_dict_array.len() {
+            let dict: Dictionary = window_dict_array.get(i).map_err(Error::CoreFoundation)?;
+            let window = Window::try_from(dict)?;
+            if window.is_user_application() && window.is_user_application() {
+                vec.push(window);
+            }
+        }
+
+        Ok(vec)
     }
 
     pub fn get_display_id(
@@ -101,11 +109,11 @@ impl Window {
     }
 }
 
-impl TryFrom<CFDictionaryRef> for Window {
+impl TryFrom<Dictionary> for Window {
     // TODO: proper error type
-    type Error = &'static str;
+    type Error = Error;
 
-    fn try_from(dict: CFDictionaryRef) -> std::result::Result<Self, Self::Error> {
+    fn try_from(dictionary: Dictionary) -> std::result::Result<Self, Self::Error> {
         const ALPHA_DICTIONARY_KEY: &str = "kCGWindowAlpha";
         const BOUNDS_DICTIONARY_KEY: &str = "kCGWindowBounds";
         const IS_ON_SCREEN_DICTIONARY_KEY: &str = "kCGWindowIsOnscreen";
@@ -118,39 +126,38 @@ impl TryFrom<CFDictionaryRef> for Window {
         const SHARING_STATE_DICTIONARY_KEY: &str = "kCGWindowSharingState";
         const STORE_TYPE_DICTIONARY_KEY: &str = "kCGWindowStoreType";
 
-        let dictionary = Dictionary::try_from(dict).map_err(|_| "could not make dictionary")?;
-
+        // TODO: errors
         Ok(Self {
             alpha: UnitFloat(
                 dictionary
                     .get(&ALPHA_DICTIONARY_KEY)
-                    .ok_or("could not get alpha")?,
+                    .ok_or(Error::NullCFArray)?,
             ),
             bounds: dictionary
                 .get::<&str, CGRect>(&BOUNDS_DICTIONARY_KEY)
-                .ok_or("could not get bounds")?
+                .ok_or(Error::NullCFArray)?
                 .into(),
             is_on_screen: dictionary.get(&IS_ON_SCREEN_DICTIONARY_KEY),
             layer: dictionary
                 .get(&LAYER_DICTIONARY_KEY)
-                .ok_or("could not get layer")?,
+                .ok_or(Error::NullCFArray)?,
             memory_usage_bytes: dictionary
                 .get(&MEMORY_USAGE_BYTES_DICTIONARY_KEY)
-                .ok_or("could not get memory usage")?,
+                .ok_or(Error::NullCFArray)?,
             name: dictionary.get(&NAME_DICTIONARY_KEY),
             number: dictionary
                 .get(&NUMBER_DICTIONARY_KEY)
-                .ok_or("could not get number")?,
+                .ok_or(Error::NullCFArray)?,
             owner_name: dictionary.get(&OWNER_NAME_DICTIONARY_KEY),
             owner_pid: dictionary
                 .get(&OWNER_PID_DICTIONARY_KEY)
-                .ok_or("could not get owner pid")?,
+                .ok_or(Error::NullCFArray)?,
             sharing_state: dictionary
                 .get(&SHARING_STATE_DICTIONARY_KEY)
-                .ok_or("could not get sharing state")?,
+                .ok_or(Error::NullCFArray)?,
             store_type: dictionary
                 .get(&STORE_TYPE_DICTIONARY_KEY)
-                .ok_or("could not get store type")?,
+                .ok_or(Error::NullCFArray)?,
         })
     }
 }

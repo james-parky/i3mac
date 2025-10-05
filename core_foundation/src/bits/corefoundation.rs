@@ -143,7 +143,7 @@ impl TryFrom<&str> for CFTypeRef {
 
 impl TryFrom<CFTypeRef> for &str {
     type Error = Error;
-    fn try_from(value: CFTypeRef) -> std::result::Result<Self, Self::Error> {
+    fn try_from(value: CFTypeRef) -> Result<Self> {
         if value.0.is_null() {
             return Err(Error::NulString);
         }
@@ -287,5 +287,12 @@ impl TryFrom<CFTypeRef> for bool {
         }
 
         Ok(unsafe { CFBooleanGetValue(value.0 as CFBooleanRef) })
+    }
+}
+
+impl TryFrom<CFTypeRef> for CFDictionaryRef {
+    type Error = Error;
+    fn try_from(value: CFTypeRef) -> std::result::Result<Self, Self::Error> {
+        Ok(value.0 as CFDictionaryRef)
     }
 }
