@@ -77,17 +77,19 @@ impl Window {
 
         let window_dict_array = Array::try_create(array_ref).map_err(Error::CoreFoundation)?;
 
-        let mut vec = Vec::with_capacity(window_dict_array.len());
-
-        for i in 0..window_dict_array.len() {
-            let dict: Dictionary = window_dict_array.get(i).map_err(Error::CoreFoundation)?;
-            let window = Window::try_from(dict)?;
-            if window.is_user_application() && window.is_user_application() {
-                vec.push(window);
-            }
-        }
-
-        Ok(vec)
+        Ok((0..window_dict_array.len())
+            .filter_map(|i| {
+                match window_dict_array
+                    .get::<Dictionary>(i)
+                    .map_err(Error::CoreFoundation)
+                {
+                    Err(_) => None,
+                    Ok(dict) => Window::try_from(dict).ok(),
+                }
+            })
+            .filter(Window::is_user_application)
+            .filter(|w| w.is_on_screen.is_some_and(|i| i))
+            .collect::<Vec<_>>())
     }
 
     pub fn get_display_id(
