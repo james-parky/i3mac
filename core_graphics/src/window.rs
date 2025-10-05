@@ -112,7 +112,6 @@ impl Window {
 }
 
 impl TryFrom<Dictionary> for Window {
-    // TODO: proper error type
     type Error = Error;
 
     fn try_from(dictionary: Dictionary) -> std::result::Result<Self, Self::Error> {
@@ -128,38 +127,37 @@ impl TryFrom<Dictionary> for Window {
         const SHARING_STATE_DICTIONARY_KEY: &str = "kCGWindowSharingState";
         const STORE_TYPE_DICTIONARY_KEY: &str = "kCGWindowStoreType";
 
-        // TODO: errors
         Ok(Self {
-            alpha: UnitFloat(
-                dictionary
-                    .get(&ALPHA_DICTIONARY_KEY)
-                    .ok_or(Error::NullCFArray)?,
-            ),
+            alpha: UnitFloat(dictionary.get(&ALPHA_DICTIONARY_KEY).ok_or(
+                Error::CouldNotFindDictionaryKey(ALPHA_DICTIONARY_KEY.into()),
+            )?),
             bounds: dictionary
                 .get::<&str, CGRect>(&BOUNDS_DICTIONARY_KEY)
-                .ok_or(Error::NullCFArray)?
+                .ok_or(Error::CouldNotFindDictionaryKey(
+                    BOUNDS_DICTIONARY_KEY.into(),
+                ))?
                 .into(),
             is_on_screen: dictionary.get(&IS_ON_SCREEN_DICTIONARY_KEY),
-            layer: dictionary
-                .get(&LAYER_DICTIONARY_KEY)
-                .ok_or(Error::NullCFArray)?,
-            memory_usage_bytes: dictionary
-                .get(&MEMORY_USAGE_BYTES_DICTIONARY_KEY)
-                .ok_or(Error::NullCFArray)?,
+            layer: dictionary.get(&LAYER_DICTIONARY_KEY).ok_or(
+                Error::CouldNotFindDictionaryKey(LAYER_DICTIONARY_KEY.into()),
+            )?,
+            memory_usage_bytes: dictionary.get(&MEMORY_USAGE_BYTES_DICTIONARY_KEY).ok_or(
+                Error::CouldNotFindDictionaryKey(MEMORY_USAGE_BYTES_DICTIONARY_KEY.into()),
+            )?,
             name: dictionary.get(&NAME_DICTIONARY_KEY),
-            number: dictionary
-                .get(&NUMBER_DICTIONARY_KEY)
-                .ok_or(Error::NullCFArray)?,
+            number: dictionary.get(&NUMBER_DICTIONARY_KEY).ok_or(
+                Error::CouldNotFindDictionaryKey(NUMBER_DICTIONARY_KEY.into()),
+            )?,
             owner_name: dictionary.get(&OWNER_NAME_DICTIONARY_KEY),
-            owner_pid: dictionary
-                .get(&OWNER_PID_DICTIONARY_KEY)
-                .ok_or(Error::NullCFArray)?,
-            sharing_state: dictionary
-                .get(&SHARING_STATE_DICTIONARY_KEY)
-                .ok_or(Error::NullCFArray)?,
-            store_type: dictionary
-                .get(&STORE_TYPE_DICTIONARY_KEY)
-                .ok_or(Error::NullCFArray)?,
+            owner_pid: dictionary.get(&OWNER_PID_DICTIONARY_KEY).ok_or(
+                Error::CouldNotFindDictionaryKey(OWNER_PID_DICTIONARY_KEY.into()),
+            )?,
+            sharing_state: dictionary.get(&SHARING_STATE_DICTIONARY_KEY).ok_or(
+                Error::CouldNotFindDictionaryKey(SHARING_STATE_DICTIONARY_KEY.into()),
+            )?,
+            store_type: dictionary.get(&STORE_TYPE_DICTIONARY_KEY).ok_or(
+                Error::CouldNotFindDictionaryKey(STORE_TYPE_DICTIONARY_KEY.into()),
+            )?,
         })
     }
 }

@@ -21,6 +21,7 @@ pub enum Error {
     NulString,
     InvalidCString(Utf8Error),
     CoreFoundation(core_foundation::Error),
+    CouldNotFindDictionaryKey(String),
 }
 
 impl From<bits::CGError> for Option<Error> {
