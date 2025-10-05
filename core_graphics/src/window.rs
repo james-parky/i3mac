@@ -70,26 +70,13 @@ impl Window {
             )
         };
 
-        if array_ref.is_null() {
-            // TODO: more specific error
-            return Err(Error::NullCFArray);
-        }
-
-        let window_dict_array = Array::try_create(array_ref).map_err(Error::CoreFoundation)?;
-
-        Ok((0..window_dict_array.len())
-            .filter_map(|i| {
-                match window_dict_array
-                    .get::<Dictionary>(i)
-                    .map_err(Error::CoreFoundation)
-                {
-                    Err(_) => None,
-                    Ok(dict) => Window::try_from(dict).ok(),
-                }
-            })
+        Ok(Array::<Dictionary>::try_create(array_ref)
+            .map_err(Error::CoreFoundation)?
+            .into_iter()
+            .filter_map(|dict| Window::try_from(dict).ok())
             .filter(Window::is_user_application)
-            .filter(|w| w.is_on_screen.is_some_and(|i| i))
-            .collect::<Vec<_>>())
+            .filter(|window| window.is_on_screen.is_some_and(|i| i))
+            .collect())
     }
 
     pub fn get_display_id(
