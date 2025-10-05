@@ -38,8 +38,7 @@ impl TryFrom<CFDictionaryRef> for Dictionary {
 
     fn try_from(dict: CFDictionaryRef) -> Result<Self> {
         if dict.is_null() {
-            // TODO: proper error value
-            return Err(Error::NulString);
+            return Err(Error::NulDictionary);
         }
 
         let size: u64 = unsafe { CFDictionaryGetCount(dict) };

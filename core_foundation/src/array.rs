@@ -10,8 +10,7 @@ where
     type Error = Error;
     fn try_from(array: CFArrayRef) -> Result<Array<T>> {
         if array.is_null() {
-            // TODO: real error
-            return Err(Error::NulString);
+            return Err(Error::NullCFArray);
         }
 
         let len = unsafe { CFArrayGetCount(array) };
