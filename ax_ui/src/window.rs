@@ -1,19 +1,23 @@
 use crate::bits::{
-    AXError, AXUIElementCopyAttributeValue, AXUIElementCreateApplication,
-    AXUIElementSetAttributeValue, AXValueCreate, AXValueGetValue, AXValueRef, AXValueType,
-    AxUiElementRef,
+    AXError, AXObserverAddNotification, AXObserverCallback, AXObserverCreate,
+    AXObserverGetRunLoopSource, AXObserverRef, AXUIElementCopyAttributeValue,
+    AXUIElementCreateApplication, AXUIElementSetAttributeValue, AXValueCreate, AXValueGetValue,
+    AXValueRef, AXValueType, AxUiElementRef,
 };
 use crate::{Error, Result};
 use core_foundation::{
-    CFArrayGetCount, CFArrayGetValueAtIndex, CFArrayRef, CFStringCreateWithCString,
-    CFStringEncoding, CFStringRef,
+    CFArrayGetCount, CFArrayGetValueAtIndex, CFArrayRef, CFRunLoopAddSource, CFRunLoopGetCurrent,
+    CFStringCreateWithCString, CFStringEncoding, CFStringRef, kCFRunLoopDefaultMode,
 };
 use core_graphics::{Bounds, CGPoint};
 use std::ffi::c_void;
 
 #[derive(Debug)]
 pub struct Window {
-    ax_ref: AxUiElementRef,
+    owner_pid: libc::pid_t,
+    application_ref: AxUiElementRef,
+    window_ref: AxUiElementRef,
+    observer_ref: Option<AXObserverRef>,
 }
 
 impl Window {
@@ -29,15 +33,57 @@ impl Window {
         let windows_array_ref = get_window_ref_array(application_ref)?;
 
         for i in 0..unsafe { CFArrayGetCount(windows_array_ref) } {
-            let window = unsafe { CFArrayGetValueAtIndex(windows_array_ref, i) } as AxUiElementRef;
-            let point = get_window_position(window)?;
+            let window_ref =
+                unsafe { CFArrayGetValueAtIndex(windows_array_ref, i) } as AxUiElementRef;
+            let point = get_window_position(window_ref)?;
 
             if point.x == bounds.x && point.y == bounds.y {
-                return Ok(Self { ax_ref: window });
+                let mut ret = Self {
+                    owner_pid,
+                    application_ref,
+                    window_ref,
+                    observer_ref: None,
+                };
+
+                ret.attach_move_observer()?;
+                return Ok(ret);
             }
         }
 
         Err(Error::CouldNotFindWindow(owner_pid))
+    }
+
+    fn attach_move_observer(&mut self) -> Result<()> {
+        let to = CGPoint { x: 0.0, y: 0.0 };
+        let (move_callback, ctx) = self.create_move_callback(to);
+
+        let mut observer: AXObserverRef = std::ptr::null_mut();
+        let res = unsafe { AXObserverCreate(self.owner_pid, move_callback, &mut observer) };
+
+        if res != 0 {
+            // TODO: observer error
+            return Err(Error::CouldNotCreateObserver(self.owner_pid));
+        }
+
+        let moved = cfstring("AXMoved")?;
+        let res = unsafe { AXObserverAddNotification(observer, self.window_ref, moved, ctx) };
+        // TODO: unique error
+        if res != 0 {
+            // TODO: observer error
+            return Err(Error::CouldNotCreateObserver(self.owner_pid));
+        }
+
+        unsafe {
+            CFRunLoopAddSource(
+                CFRunLoopGetCurrent(),
+                AXObserverGetRunLoopSource(observer),
+                kCFRunLoopDefaultMode,
+            )
+        };
+
+        self.observer_ref = Some(observer);
+
+        Ok(())
     }
 
     pub fn move_to(&self, x: f64, y: f64) -> Result<()> {
@@ -47,7 +93,7 @@ impl Window {
             unsafe { AXValueCreate(AXValueType::CG_POINT, &point as *const _ as *const c_void) };
 
         match AXError(unsafe {
-            AXUIElementSetAttributeValue(self.ax_ref, pos_attr, ax_value as *const c_void)
+            AXUIElementSetAttributeValue(self.window_ref, pos_attr, ax_value as *const c_void)
         })
         .into()
         {
@@ -55,6 +101,47 @@ impl Window {
             None => Ok(()),
         }
     }
+
+    fn create_move_callback(&self, to: CGPoint) -> (AXObserverCallback, *mut c_void) {
+        let ctx = Box::new(WindowMoveCallbackContext {
+            window: self.window_ref,
+            target: to,
+        });
+
+        let ctx_ptr = Box::into_raw(ctx);
+
+        extern "C" fn callback(
+            _observer: AXObserverRef,
+            _element: AxUiElementRef,
+            _notification: CFStringRef,
+            context: *mut c_void,
+        ) {
+            let ctx: &WindowMoveCallbackContext =
+                unsafe { &*(context as *const WindowMoveCallbackContext) };
+
+            let ax_value = unsafe {
+                AXValueCreate(
+                    AXValueType::CG_POINT,
+                    &ctx.target as *const _ as *const c_void,
+                )
+            };
+            let res = unsafe {
+                AXUIElementSetAttributeValue(
+                    ctx.window,
+                    cfstring("AXPosition").unwrap(),
+                    ax_value.cast(),
+                )
+            };
+        }
+
+        (callback, ctx_ptr as *mut c_void)
+    }
+}
+
+#[repr(C)]
+struct WindowMoveCallbackContext {
+    window: AxUiElementRef,
+    target: CGPoint,
 }
 
 // TODO: newtype for CfStringRef and impl a TryFrom<&str>

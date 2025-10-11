@@ -1,3 +1,4 @@
+use core_foundation::CFRunLoopRun;
 use core_graphics::Display;
 
 fn main() {
@@ -14,6 +15,9 @@ fn main() {
         }
         Err(err) => {
             eprintln!("could not get displays: {:?}", err);
+            return;
         }
     }
+
+    unsafe { CFRunLoopRun() };
 }

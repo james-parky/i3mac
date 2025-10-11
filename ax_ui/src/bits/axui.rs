@@ -1,4 +1,4 @@
-use core_foundation::{CFArrayRef, CFStringRef};
+use core_foundation::{CFArrayRef, CFRunLoopSourceRef, CFStringRef};
 use std::ffi::{c_int, c_uint, c_void};
 
 pub type AxUiElementRef = *const c_void;
@@ -71,6 +71,30 @@ unsafe extern "C" {
     pub fn AXValueCreate(type_: AXValueType, value: *const c_void) -> AXValueRef;
 
     pub fn AXValueGetValue(value_ref: AXValueRef, type_: AXValueType, value: *mut c_void) -> bool;
+
+    pub fn AXObserverCreate(
+        application: libc::pid_t,
+        callback: AXObserverCallback,
+        observer: &mut AXObserverRef,
+    ) -> c_int;
+
+    pub fn AXObserverAddNotification(
+        observer: AXObserverRef,
+        element: AxUiElementRef,
+        notification: CFStringRef,
+        context: *mut c_void,
+    ) -> c_int;
+
+    pub fn AXObserverGetRunLoopSource(observer: AXObserverRef) -> CFRunLoopSourceRef;
 }
+
+pub type AXObserverRef = *const c_void;
+
+pub type AXObserverCallback = extern "C" fn(
+    observer: AXObserverRef,
+    element: AxUiElementRef,
+    notification: CFStringRef,
+    ref_con: *mut c_void,
+);
 
 pub type AXValueRef = *const c_void;

@@ -26,6 +26,7 @@ pub enum Error {
     Unknown,
     CoreFoundation(core_foundation::Error),
     CouldNotFindWindow(libc::pid_t),
+    CouldNotCreateObserver(libc::pid_t),
 }
 
 impl From<bits::AXError> for Option<Error> {

@@ -6,6 +6,10 @@ use std::ffi::{CStr, CString, c_char, c_ulong, c_void};
 pub type CFArrayRef = *const CFArray;
 pub type CFArray = c_void;
 
+pub type CFRunLoopSourceRef = *const c_void;
+pub type CFRunLoopRef = *const c_void;
+pub type CFRunLoopMode = CFStringRef;
+
 pub type CFIndex = c_ulong;
 pub type CFDictionaryRef = *const CFDictionary;
 pub type CFDictionary = c_void;
@@ -54,6 +58,11 @@ unsafe extern "C" {
     pub fn CFHash(hash: CFTypeRef) -> usize;
 
     fn CFBooleanGetValue(boolean: CFBooleanRef) -> bool;
+
+    pub fn CFRunLoopAddSource(rl: CFRunLoopRef, source: CFRunLoopSourceRef, mode: CFRunLoopMode);
+    pub fn CFRunLoopGetCurrent() -> CFRunLoopRef;
+    pub fn CFRunLoopRun();
+    pub static kCFRunLoopDefaultMode: CFRunLoopMode;
 }
 
 #[repr(C)]
