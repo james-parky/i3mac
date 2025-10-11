@@ -85,6 +85,12 @@ unsafe extern "C" {
         context: *mut c_void,
     ) -> c_int;
 
+    pub fn AXObserverRemoveNotification(
+        observer: AXObserverRef,
+        element: AxUiElementRef,
+        notification: CFStringRef,
+    ) -> c_int;
+
     pub fn AXObserverGetRunLoopSource(observer: AXObserverRef) -> CFRunLoopSourceRef;
 }
 

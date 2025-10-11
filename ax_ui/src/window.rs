@@ -1,8 +1,8 @@
 use crate::bits::{
     AXError, AXObserverAddNotification, AXObserverCallback, AXObserverCreate,
-    AXObserverGetRunLoopSource, AXObserverRef, AXUIElementCopyAttributeValue,
-    AXUIElementCreateApplication, AXUIElementSetAttributeValue, AXValueCreate, AXValueGetValue,
-    AXValueRef, AXValueType, AxUiElementRef,
+    AXObserverGetRunLoopSource, AXObserverRef, AXObserverRemoveNotification,
+    AXUIElementCopyAttributeValue, AXUIElementCreateApplication, AXUIElementSetAttributeValue,
+    AXValueCreate, AXValueGetValue, AXValueRef, AXValueType, AxUiElementRef,
 };
 use crate::{Error, Result};
 use core_foundation::{
@@ -50,6 +50,13 @@ impl Window {
         Err(Error::CouldNotFindWindow(owner_pid))
     }
     pub fn attach_lock_callback(&mut self, point: CGPoint, size: CGSize) -> Result<()> {
+        if let Some(observer_ref) = self.observer_ref {
+            let resized = cfstring("AXResized")?;
+            let moved = cfstring("AXMoved")?;
+            let _ = unsafe { AXObserverRemoveNotification(observer_ref, self.window_ref, resized) };
+            let _ = unsafe { AXObserverRemoveNotification(observer_ref, self.window_ref, moved) };
+        }
+
         let (lock_callback, ctx) = self.create_lock_callback(point, size);
 
         let mut observer: AXObserverRef = std::ptr::null_mut();
