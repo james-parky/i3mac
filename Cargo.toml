@@ -1,5 +1,5 @@
 [workspace]
-members = ["core_foundation", "core_graphics", "main"]
+members = [ "ax_ui","core_foundation", "core_graphics", "main"]
 resolver = "3"
 
 default-members = ["main"]

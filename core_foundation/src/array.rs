@@ -1,6 +1,7 @@
 use crate::Result;
 use crate::{CFArrayGetCount, CFArrayGetValueAtIndex, CFArrayRef, CFIndex, CFTypeRef, Error};
 
+#[derive(Debug)]
 pub struct Array<T: TryFrom<CFTypeRef, Error = Error>>(Vec<T>);
 
 impl<T> TryFrom<CFArrayRef> for Array<T>

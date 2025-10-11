@@ -66,6 +66,14 @@ macro_rules! get_or_error {
 
 #[allow(dead_code)]
 impl Window {
+    pub fn owner_pid(&self) -> libc::pid_t {
+        self.owner_pid
+    }
+
+    pub fn bounds(&self) -> &Bounds {
+        &self.bounds
+    }
+
     pub fn is_user_application(&self) -> bool {
         self.layer == 0
     }

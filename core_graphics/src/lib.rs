@@ -3,10 +3,12 @@ mod display;
 mod error;
 mod window;
 
+pub use bits::CGPoint;
+
 use core_foundation::{CFDictionaryRef, CFTypeRef, Dictionary};
 pub use display::*;
 
-use crate::bits::{CGDirectDisplayID, CGPoint, CGRect, CGSize};
+use crate::bits::{CGDirectDisplayID, CGRect, CGSize};
 pub use error::Error;
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -49,11 +51,7 @@ impl Bounds {
         let iw = (a.x + a.width).min(b.x + b.width) - ix;
         let ih = (a.y + a.height).min(b.y + b.height) - iy;
 
-        if iw > 0.0 && ih > 0.0 {
-            iw * ih
-        } else {
-            0.0
-        }
+        if iw > 0.0 && ih > 0.0 { iw * ih } else { 0.0 }
     }
 }
 

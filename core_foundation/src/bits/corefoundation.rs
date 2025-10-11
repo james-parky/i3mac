@@ -17,7 +17,7 @@ pub struct CFTypeRef(pub *const c_void);
 pub type CFBooleanRef = *const c_void;
 
 type CFAllocatorRef = *const c_void;
-type CFStringRef = *const c_void;
+pub type CFStringRef = *const c_void;
 
 #[link(name = "ApplicationServices", kind = "framework")]
 unsafe extern "C" {
@@ -29,7 +29,7 @@ unsafe extern "C" {
         keys: *mut *const c_void,
         values: *mut *const c_void,
     ) -> *const c_void;
-    fn CFStringCreateWithCString(
+    pub fn CFStringCreateWithCString(
         alloc: CFAllocatorRef,
         string: *const c_char,
         encoding: CFStringEncoding,
@@ -60,7 +60,7 @@ unsafe extern "C" {
 // We use an enum here to be faithful to the Core Graphics library signatures,
 // but we only ever need the Utf8 variant.
 #[allow(dead_code)]
-enum CFStringEncoding {
+pub enum CFStringEncoding {
     MacRoman = 0,
     WindowsLatin1 = 0x0500,
     IsoLatin1 = 0x0201,

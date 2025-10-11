@@ -1,8 +1,9 @@
 [package]
-name = "main"
+name = "ax_ui"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+libc = "0.2.176"
+core_foundation = { path = "../core_foundation" }
 core_graphics = { path = "../core_graphics" }
-ax_ui = { path = "../ax_ui" }
