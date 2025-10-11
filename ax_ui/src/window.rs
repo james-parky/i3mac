@@ -12,7 +12,7 @@ use core_foundation::{
 use core_graphics::{Bounds, CGPoint, CGRect, CGSize};
 use std::ffi::c_void;
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct Window {
     owner_pid: libc::pid_t,
     application_ref: AxUiElementRef,

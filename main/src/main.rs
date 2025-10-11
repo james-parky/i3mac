@@ -9,13 +9,14 @@ enum Error {
 
 type Result<T> = std::result::Result<T, Error>;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 enum Direction {
     Vertical,
+    #[default]
     Horizontal,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 struct Window<'a> {
     cg: &'a core_graphics::Window,
     ax: ax_ui::Window,
@@ -57,19 +58,91 @@ struct Display<'a> {
     root: Container<'a>,
 }
 
+fn split_n(total: f64, n: usize) -> Vec<f64> {
+    let base = total / n as f64;
+    let remainder = total % n as f64;
+
+    (0..n)
+        .map(|i| {
+            if (i as f64) < remainder {
+                base + 1.0
+            } else {
+                base
+            }
+        })
+        .collect()
+}
+
+fn xs_from_widths(start: f64, widths: &[f64]) -> Vec<f64> {
+    let mut xs = Vec::with_capacity(widths.len());
+    xs.push(start);
+    for w in widths.iter().skip(1) {
+        xs.push(xs[xs.len() - 1] + w);
+    }
+
+    xs
+}
+
+impl<'a> Display<'a> {
+    fn try_new(cg_display: &'a core_graphics::Display) -> Result<Self> {
+        let container = match cg_display.windows.len() {
+            1 => Container::Leaf(Window::try_new(&cg_display.windows[0], cg_display.bounds)?),
+            n => {
+                let widths = split_n(cg_display.bounds.width, n);
+                let xs = xs_from_widths(cg_display.bounds.x, &widths);
+
+                Container::Split {
+                    direction: Direction::default(),
+                    children: cg_display
+                        .windows
+                        .iter()
+                        .enumerate()
+                        .map(|(i, cgw)| {
+                            Window::try_new(
+                                cgw,
+                                Bounds {
+                                    width: widths[i],
+                                    x: xs[i],
+                                    height: cg_display.bounds.height,
+                                    y: cg_display.bounds.y,
+                                },
+                            )
+                        })
+                        .collect::<Result<Vec<_>>>()?
+                        .iter()
+                        .map(|w| Container::Leaf(*w))
+                        .collect(),
+                }
+            }
+        };
+
+        Ok(Self {
+            // TODO: get id
+            id: 0,
+            bounds: cg_display.bounds,
+            root: container,
+        })
+    }
+}
+
 fn main() {
-    let displays = core_graphics::Display::all().unwrap();
-    let d = displays.get(&3usize.into()).unwrap();
-    let cgw = &d.windows[0];
+    let displays = core_graphics::Display::all()
+        .unwrap()
+        .values()
+        .map(Display::try_new)
+        .collect::<Result<Vec<_>>>()
+        .unwrap();
 
-    let w = Window::try_new(&cgw, d.bounds.with_pad(40.0)).unwrap();
-    let left_display = Display {
-        id: 3,
-        bounds: d.bounds,
-        root: Container::Leaf(w),
-    };
-
-    println!("{left_display:?}");
+    // let cgw = &d.windows[0];
+    //
+    // let w = Window::try_new(&cgw, d.bounds.with_pad(40.0)).unwrap();
+    // let left_display = Display {
+    //     id: 3,
+    //     bounds: d.bounds,
+    //     root: Container::Leaf(w),
+    // };
+    //
+    // println!("{left_display:?}");
 
     unsafe { CFRunLoopRun() };
 }
