@@ -1,5 +1,13 @@
 use core_foundation::CFRunLoopRun;
-use core_graphics::{CGPoint, CGRect, CGSize, DisplayId};
+use core_graphics::{Bounds, CGPoint, CGRect, CGSize, DisplayId};
+
+#[derive(Debug)]
+enum Error {
+    AxUi(ax_ui::Error),
+    CoreGraphics(core_graphics::Error),
+}
+
+type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]
 enum Direction {
@@ -10,7 +18,27 @@ enum Direction {
 #[derive(Debug)]
 struct Window<'a> {
     cg: &'a core_graphics::Window,
-    ax: &'a ax_ui::Window,
+    ax: ax_ui::Window,
+}
+
+impl<'a> Window<'a> {
+    fn try_new(cg_window: &'a core_graphics::Window, bounds: Bounds) -> Result<Self> {
+        let mut ax_window =
+            ax_ui::Window::new(cg_window.owner_pid(), cg_window.bounds()).map_err(Error::AxUi)?;
+        ax_window
+            .attach_lock_callback(bounds.point(), bounds.size())
+            .map_err(Error::AxUi)?;
+
+        ax_window.move_to(bounds.x, bounds.y).map_err(Error::AxUi)?;
+        ax_window
+            .resize(bounds.width, bounds.height)
+            .map_err(Error::AxUi)?;
+
+        Ok(Self {
+            cg: cg_window,
+            ax: ax_window,
+        })
+    }
 }
 
 #[derive(Debug)]
@@ -33,20 +61,8 @@ fn main() {
     let displays = core_graphics::Display::all().unwrap();
     let d = displays.get(&3usize.into()).unwrap();
     let cgw = &d.windows[0];
-    let mut axw = ax_ui::Window::new(cgw.owner_pid(), cgw.bounds()).unwrap();
-    // TODO: just store point and rect?
-    let point = CGPoint {
-        x: cgw.bounds().x,
-        y: cgw.bounds().y,
-    };
-    let size = CGSize {
-        width: cgw.bounds().width,
-        height: cgw.bounds().height,
-    };
-    let e = axw.attach_lock_callback(point, size);
-    println!("{e:?}");
 
-    let w = Window { cg: cgw, ax: &axw };
+    let w = Window::try_new(&cgw, d.bounds.with_pad(40.0)).unwrap();
     let left_display = Display {
         id: 3,
         bounds: d.bounds,

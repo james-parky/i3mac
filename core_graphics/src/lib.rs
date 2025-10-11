@@ -48,6 +48,15 @@ pub struct Bounds {
 }
 
 impl Bounds {
+    pub fn with_pad(&self, pad: f64) -> Self {
+        Self {
+            height: self.height - (2.0 * pad),
+            width: self.width - (2.0 * pad),
+            x: self.x + pad,
+            y: self.y + pad,
+        }
+    }
+
     pub fn overlapping_area(a: &Bounds, b: &Bounds) -> f64 {
         let ix = a.x.max(b.x);
         let iy = a.y.max(b.y);
@@ -55,6 +64,20 @@ impl Bounds {
         let ih = (a.y + a.height).min(b.y + b.height) - iy;
 
         if iw > 0.0 && ih > 0.0 { iw * ih } else { 0.0 }
+    }
+
+    pub fn point(&self) -> CGPoint {
+        CGPoint {
+            x: self.x,
+            y: self.y,
+        }
+    }
+
+    pub fn size(&self) -> CGSize {
+        CGSize {
+            width: self.width,
+            height: self.height,
+        }
     }
 }
 

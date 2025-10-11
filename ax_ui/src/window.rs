@@ -88,7 +88,6 @@ impl Window {
         Ok(())
     }
 
-    #[allow(dead_code)]
     pub fn move_to(&self, x: f64, y: f64) -> Result<()> {
         let pos_attr = cfstring("AXPosition")?;
         let point = CGPoint { x, y };
@@ -97,6 +96,22 @@ impl Window {
 
         match AXError(unsafe {
             AXUIElementSetAttributeValue(self.window_ref, pos_attr, ax_value as *const c_void)
+        })
+        .into()
+        {
+            Some(err) => Err(err),
+            None => Ok(()),
+        }
+    }
+
+    pub fn resize(&self, width: f64, height: f64) -> Result<()> {
+        let size_attr = cfstring("AXSize")?;
+        let point = CGSize { width, height };
+        let ax_value =
+            unsafe { AXValueCreate(AXValueType::CG_SIZE, &point as *const _ as *const c_void) };
+
+        match AXError(unsafe {
+            AXUIElementSetAttributeValue(self.window_ref, size_attr, ax_value as *const c_void)
         })
         .into()
         {
