@@ -9,7 +9,7 @@ use core_foundation::{
     CFArrayGetCount, CFArrayGetValueAtIndex, CFArrayRef, CFRunLoopAddSource, CFRunLoopGetCurrent,
     CFStringCreateWithCString, CFStringEncoding, CFStringRef, kCFRunLoopDefaultMode,
 };
-use core_graphics::{Bounds, CGPoint};
+use core_graphics::{Bounds, CGPoint, CGRect, CGSize};
 use std::ffi::c_void;
 
 #[derive(Debug)]
@@ -38,33 +38,35 @@ impl Window {
             let point = get_window_position(window_ref)?;
 
             if point.x == bounds.x && point.y == bounds.y {
-                let mut ret = Self {
+                return Ok(Self {
                     owner_pid,
                     application_ref,
                     window_ref,
                     observer_ref: None,
-                };
-
-                ret.attach_move_observer()?;
-                return Ok(ret);
+                });
             }
         }
 
         Err(Error::CouldNotFindWindow(owner_pid))
     }
-
-    fn attach_move_observer(&mut self) -> Result<()> {
-        let to = CGPoint { x: 0.0, y: 0.0 };
-        let (move_callback, ctx) = self.create_move_callback(to);
+    pub fn attach_lock_callback(&mut self, point: CGPoint, size: CGSize) -> Result<()> {
+        let (lock_callback, ctx) = self.create_lock_callback(point, size);
 
         let mut observer: AXObserverRef = std::ptr::null_mut();
-        let res = unsafe { AXObserverCreate(self.owner_pid, move_callback, &mut observer) };
+        let res = unsafe { AXObserverCreate(self.owner_pid, lock_callback, &mut observer) };
 
         if res != 0 {
             // TODO: observer error
             return Err(Error::CouldNotCreateObserver(self.owner_pid));
         }
 
+        let resized = cfstring("AXResized")?;
+        let res = unsafe { AXObserverAddNotification(observer, self.window_ref, resized, ctx) };
+        // TODO: unique error
+        if res != 0 {
+            // TODO: observer error
+            return Err(Error::CouldNotCreateObserver(self.owner_pid));
+        }
         let moved = cfstring("AXMoved")?;
         let res = unsafe { AXObserverAddNotification(observer, self.window_ref, moved, ctx) };
         // TODO: unique error
@@ -86,6 +88,7 @@ impl Window {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn move_to(&self, x: f64, y: f64) -> Result<()> {
         let pos_attr = cfstring("AXPosition")?;
         let point = CGPoint { x, y };
@@ -102,10 +105,15 @@ impl Window {
         }
     }
 
-    fn create_move_callback(&self, to: CGPoint) -> (AXObserverCallback, *mut c_void) {
-        let ctx = Box::new(WindowMoveCallbackContext {
+    fn create_lock_callback(
+        &self,
+        point: CGPoint,
+        size: CGSize,
+    ) -> (AXObserverCallback, *mut c_void) {
+        let ctx = Box::new(WindowLockCallbackContext {
             window: self.window_ref,
-            target: to,
+            point,
+            size,
         });
 
         let ctx_ptr = Box::into_raw(ctx);
@@ -116,19 +124,31 @@ impl Window {
             _notification: CFStringRef,
             context: *mut c_void,
         ) {
-            let ctx: &WindowMoveCallbackContext =
-                unsafe { &*(context as *const WindowMoveCallbackContext) };
+            let ctx: &WindowLockCallbackContext =
+                unsafe { &*(context as *const WindowLockCallbackContext) };
 
             let ax_value = unsafe {
                 AXValueCreate(
                     AXValueType::CG_POINT,
-                    &ctx.target as *const _ as *const c_void,
+                    &ctx.point as *const _ as *const c_void,
                 )
             };
+            // TODO: handle
             let res = unsafe {
                 AXUIElementSetAttributeValue(
                     ctx.window,
                     cfstring("AXPosition").unwrap(),
+                    ax_value.cast(),
+                )
+            };
+            let ax_value = unsafe {
+                AXValueCreate(AXValueType::CG_SIZE, &ctx.size as *const _ as *const c_void)
+            };
+            // TODO: handle
+            let res = unsafe {
+                AXUIElementSetAttributeValue(
+                    ctx.window,
+                    cfstring("AXSize").unwrap(),
                     ax_value.cast(),
                 )
             };
@@ -139,9 +159,10 @@ impl Window {
 }
 
 #[repr(C)]
-struct WindowMoveCallbackContext {
+struct WindowLockCallbackContext {
     window: AxUiElementRef,
-    target: CGPoint,
+    point: CGPoint,
+    size: CGSize,
 }
 
 // TODO: newtype for CfStringRef and impl a TryFrom<&str>

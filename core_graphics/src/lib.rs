@@ -4,11 +4,14 @@ mod error;
 mod window;
 
 pub use bits::CGPoint;
+pub use bits::CGRect;
+pub use bits::CGSize;
+pub use window::Window;
 
 use core_foundation::{CFDictionaryRef, CFTypeRef, Dictionary};
 pub use display::*;
 
-use crate::bits::{CGDirectDisplayID, CGRect, CGSize};
+use crate::bits::CGDirectDisplayID;
 pub use error::Error;
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -36,7 +39,7 @@ impl From<usize> for DisplayId {
 }
 
 #[allow(dead_code)]
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct Bounds {
     pub height: f64,
     pub width: f64,

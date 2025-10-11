@@ -2,4 +2,5 @@ mod coregraphics;
 
 pub(super) use coregraphics::*;
 
-pub use coregraphics::CGPoint;
+// TODO: actually consider
+pub use coregraphics::*;
