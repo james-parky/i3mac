@@ -5,4 +5,4 @@ edition = "2024"
 
 [dependencies]
 core_foundation = { path = "../core_foundation" }
-libc = "0.2.176"
+libc = { workspace = true }

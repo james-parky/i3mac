@@ -4,6 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-libc = "0.2.176"
+libc = { workspace = true }
 core_foundation = { path = "../core_foundation" }
 core_graphics = { path = "../core_graphics" }
