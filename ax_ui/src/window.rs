@@ -49,50 +49,9 @@ impl Window {
 
         Err(Error::CouldNotFindWindow(owner_pid))
     }
-    pub fn attach_lock_callback(&mut self, point: CGPoint, size: CGSize) -> Result<()> {
-        if let Some(observer_ref) = self.observer_ref {
-            let resized = cfstring("AXResized")?;
-            let moved = cfstring("AXMoved")?;
-            let _ = unsafe { AXObserverRemoveNotification(observer_ref, self.window_ref, resized) };
-            let _ = unsafe { AXObserverRemoveNotification(observer_ref, self.window_ref, moved) };
-        }
 
-        let (lock_callback, ctx) = self.create_lock_callback(point, size);
-
-        let mut observer: AXObserverRef = std::ptr::null_mut();
-        let res = unsafe { AXObserverCreate(self.owner_pid, lock_callback, &mut observer) };
-
-        if res != 0 {
-            // TODO: observer error
-            return Err(Error::CouldNotCreateObserver(self.owner_pid));
-        }
-
-        let resized = cfstring("AXResized")?;
-        let res = unsafe { AXObserverAddNotification(observer, self.window_ref, resized, ctx) };
-        // TODO: unique error
-        if res != 0 {
-            // TODO: observer error
-            return Err(Error::CouldNotCreateObserver(self.owner_pid));
-        }
-        let moved = cfstring("AXMoved")?;
-        let res = unsafe { AXObserverAddNotification(observer, self.window_ref, moved, ctx) };
-        // TODO: unique error
-        if res != 0 {
-            // TODO: observer error
-            return Err(Error::CouldNotCreateObserver(self.owner_pid));
-        }
-
-        unsafe {
-            CFRunLoopAddSource(
-                CFRunLoopGetCurrent(),
-                AXObserverGetRunLoopSource(observer),
-                kCFRunLoopDefaultMode,
-            )
-        };
-
-        self.observer_ref = Some(observer);
-
-        Ok(())
+    pub fn application_ref(&self) -> AxUiElementRef {
+        self.application_ref
     }
 
     pub fn move_to(&self, x: f64, y: f64) -> Result<()> {
@@ -127,7 +86,7 @@ impl Window {
         }
     }
 
-    fn create_lock_callback(
+    pub fn create_lock_callback(
         &self,
         point: CGPoint,
         size: CGSize,
@@ -188,7 +147,7 @@ struct WindowLockCallbackContext {
 }
 
 // TODO: newtype for CfStringRef and impl a TryFrom<&str>
-fn cfstring(s: &str) -> Result<CFStringRef> {
+pub(crate) fn cfstring(s: &str) -> Result<CFStringRef> {
     let cstr = std::ffi::CString::new(s).map_err(Error::CannotMakeCString)?;
     Ok(unsafe {
         CFStringCreateWithCString(std::ptr::null(), cstr.as_ptr(), CFStringEncoding::Utf8)

@@ -1,6 +1,8 @@
 use std::ffi::NulError;
 
 use crate::bits;
+use crate::bits::AxUiElementRef;
+use crate::observer::Observer;
 
 #[derive(Debug)]
 pub enum Error {
@@ -26,7 +28,8 @@ pub enum Error {
     Unknown,
     CoreFoundation(core_foundation::Error),
     CouldNotFindWindow(libc::pid_t),
-    CouldNotCreateObserver(libc::pid_t),
+    CouldNotCreateObserver(libc::pid_t, bits::AXError),
+    CouldNotAttachNotification(AxUiElementRef, bits::AXError),
 }
 
 impl From<bits::AXError> for Option<Error> {

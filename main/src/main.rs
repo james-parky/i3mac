@@ -1,3 +1,4 @@
+use ax_ui::Observer;
 use core_foundation::CFRunLoopRun;
 use core_graphics::{Bounds, CGPoint, CGRect, CGSize, DisplayId};
 
@@ -20,24 +21,35 @@ enum Direction {
 struct Window<'a> {
     cg: &'a core_graphics::Window,
     ax: ax_ui::Window,
+    lock_observer: Observer,
 }
 
 impl<'a> Window<'a> {
     fn try_new(cg_window: &'a core_graphics::Window, bounds: Bounds) -> Result<Self> {
         let mut ax_window =
             ax_ui::Window::new(cg_window.owner_pid(), cg_window.bounds()).map_err(Error::AxUi)?;
-        ax_window
-            .attach_lock_callback(bounds.point(), bounds.size())
-            .map_err(Error::AxUi)?;
 
         ax_window.move_to(bounds.x, bounds.y).map_err(Error::AxUi)?;
         ax_window
             .resize(bounds.width, bounds.height)
             .map_err(Error::AxUi)?;
 
+        let win_ref = ax_window.application_ref();
+
+        let (lock_callback, ctx) = ax_window.create_lock_callback(bounds.point(), bounds.size());
+        let observer =
+            Observer::try_new(cg_window.owner_pid(), lock_callback).map_err(Error::AxUi)?;
+        observer
+            .add_notification(win_ref, "AXResized", ctx)
+            .map_err(Error::AxUi)?;
+        observer
+            .add_notification(win_ref, "AXMoved", ctx)
+            .map_err(Error::AxUi)?;
+
         Ok(Self {
             cg: cg_window,
             ax: ax_window,
+            lock_observer: observer,
         })
     }
 }
