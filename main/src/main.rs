@@ -67,6 +67,8 @@ impl<'a> Window<'a> {
             .add_notification(ax_window.window_ref(), "AXMoved", lock_callback.ctx)
             .map_err(Error::AxUi)?;
 
+        observer.run();
+
         Ok(Self {
             cg: cg_window,
             ax: ax_window,
@@ -118,37 +120,35 @@ fn xs_from_widths(start: f64, widths: &[f64]) -> Vec<f64> {
 }
 
 impl<'a> Display<'a> {
-    fn try_new(cg_display: &'a core_graphics::Display) -> Result<Self> {
-        let container = match cg_display.windows.len() {
+    fn try_new(display: &'a core_graphics::Display) -> Result<Self> {
+        let container = match display.windows.len() {
             1 => {
-                let mut w = Window::try_new(&cg_display.windows[0], cg_display.bounds)?;
+                let mut w = Window::try_new(&display.windows[0], display.bounds)?;
                 w.init()?;
-                w.lock_observer.run();
                 Container::Leaf(w)
             }
             n => {
-                let widths = split_n(cg_display.bounds.width, n);
-                let xs = xs_from_widths(cg_display.bounds.x, &widths);
+                let widths = split_n(display.bounds.width, n);
+                let xs = xs_from_widths(display.bounds.x, &widths);
+                let bounds: Vec<Bounds> = widths
+                    .iter()
+                    .zip(xs.iter())
+                    .map(|(&width, &x)| Bounds {
+                        width,
+                        x,
+                        ..display.bounds
+                    })
+                    .collect();
 
-                let mut children = vec![];
-                for i in 0..n {
-                    let mut window = Window::try_new(
-                        &cg_display.windows[i],
-                        Bounds {
-                            width: widths[i],
-                            x: xs[i],
-                            y: cg_display.bounds.y + 31.0,
-                            height: cg_display.bounds.height - 31.0,
-                        },
-                    )?;
-
-                    window.init()?;
-                    children.push(window);
-                }
-
-                for child in &children {
-                    child.lock_observer.run();
-                }
+                let children = (0..n)
+                    .map(|i| match Window::try_new(&display.windows[i], bounds[i]) {
+                        Ok(mut window) => {
+                            window.init()?;
+                            Ok(window)
+                        }
+                        Err(e) => Err(e),
+                    })
+                    .collect::<Result<Vec<Window>>>()?;
 
                 Container::Split {
                     direction: Direction::default(),
@@ -160,7 +160,7 @@ impl<'a> Display<'a> {
         Ok(Self {
             // TODO: get id
             id: 0,
-            bounds: cg_display.bounds,
+            bounds: display.bounds,
             root: container,
         })
     }
@@ -171,7 +171,7 @@ struct CloseContext<'a> {
 }
 
 fn main() {
-    let displays = core_graphics::Display::all()
+    let _ = core_graphics::Display::all()
         .unwrap()
         .values()
         .map(Display::try_new)
