@@ -66,6 +66,18 @@ macro_rules! get_or_error {
 
 #[allow(dead_code)]
 impl Window {
+    pub fn name(&self) -> Option<&str> {
+        if let Some(s) = &self.name {
+            Some(s)
+        } else {
+            None
+        }
+    }
+
+    pub fn number(&self) -> u64 {
+        self.number
+    }
+
     pub fn owner_pid(&self) -> libc::pid_t {
         self.owner_pid
     }

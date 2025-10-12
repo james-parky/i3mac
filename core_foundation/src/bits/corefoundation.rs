@@ -38,14 +38,16 @@ unsafe extern "C" {
         string: *const c_char,
         encoding: CFStringEncoding,
     ) -> CFStringRef;
-    fn CFStringGetCString(
+    pub fn CFStringGetCString(
         string: CFStringRef,
         buffer: *mut c_char,
         buffer_size: CFIndex,
         encoding: CFStringEncoding,
     ) -> bool;
-    fn CFStringGetLength(string: CFStringRef) -> CFIndex;
-    fn CFStringGetMaximumSizeForEncoding(index: CFIndex, encoding: CFStringEncoding) -> CFIndex;
+    pub fn CFStringGetLength(string: CFStringRef) -> CFIndex;
+    pub fn CFStringGetMaximumSizeForEncoding(index: CFIndex, encoding: CFStringEncoding)
+    -> CFIndex;
+    pub fn CFStringGetCStringPtr(string: CFStringRef, encoding: CFStringEncoding) -> *const c_char;
 
     fn CFNumberGetValue(number: CFNumberRef, type_: CFNumberType, value: *mut c_void) -> bool;
 

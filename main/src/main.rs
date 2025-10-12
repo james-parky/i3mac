@@ -1,6 +1,7 @@
-use ax_ui::Observer;
+use ax_ui::{Callback, Observer};
 use core_foundation::CFRunLoopRun;
-use core_graphics::{Bounds, CGPoint, CGRect, CGSize, DisplayId};
+use core_graphics::{Bounds, CGPoint, CGSize};
+use std::rc::Rc;
 
 #[derive(Debug)]
 enum Error {
@@ -17,39 +18,60 @@ enum Direction {
     Horizontal,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 struct Window<'a> {
     cg: &'a core_graphics::Window,
     ax: ax_ui::Window,
     lock_observer: Observer,
+    bounds: Bounds,
+}
+
+struct LockContext {
+    window: Rc<ax_ui::Window>,
+    point: CGPoint,
+    size: CGSize,
 }
 
 impl<'a> Window<'a> {
+    fn init(&mut self) -> Result<()> {
+        self.ax
+            .move_to(self.bounds.x, self.bounds.y)
+            .map_err(Error::AxUi)?;
+        self.ax
+            .resize(self.bounds.width, self.bounds.height)
+            .map_err(Error::AxUi)
+    }
+
     fn try_new(cg_window: &'a core_graphics::Window, bounds: Bounds) -> Result<Self> {
+        let search_name = cg_window.name().unwrap().to_string();
         let mut ax_window =
-            ax_ui::Window::new(cg_window.owner_pid(), cg_window.bounds()).map_err(Error::AxUi)?;
+            ax_ui::Window::new(cg_window.owner_pid(), search_name).map_err(Error::AxUi)?;
 
-        ax_window.move_to(bounds.x, bounds.y).map_err(Error::AxUi)?;
-        ax_window
-            .resize(bounds.width, bounds.height)
-            .map_err(Error::AxUi)?;
+        let context = LockContext {
+            window: Rc::new(ax_window),
+            point: bounds.point(),
+            size: bounds.size(),
+        };
 
-        let win_ref = ax_window.application_ref();
+        let lock_callback = Rc::new(Callback::new(context, |ctx| {
+            let _ = ctx.window.resize(ctx.size.width, ctx.size.height);
+            let _ = ctx.window.move_to(ctx.point.x, ctx.point.y);
+        }));
 
-        let (lock_callback, ctx) = ax_window.create_lock_callback(bounds.point(), bounds.size());
         let observer =
-            Observer::try_new(cg_window.owner_pid(), lock_callback).map_err(Error::AxUi)?;
+            Observer::try_new(cg_window.owner_pid(), &lock_callback).map_err(Error::AxUi)?;
         observer
-            .add_notification(win_ref, "AXResized", ctx)
+            .add_notification(ax_window.window_ref(), "AXResized", lock_callback.ctx)
             .map_err(Error::AxUi)?;
         observer
-            .add_notification(win_ref, "AXMoved", ctx)
+            .add_notification(ax_window.window_ref(), "AXMoved", lock_callback.ctx)
             .map_err(Error::AxUi)?;
 
         Ok(Self {
             cg: cg_window,
             ax: ax_window,
             lock_observer: observer,
+            bounds,
         })
     }
 }
@@ -66,7 +88,7 @@ enum Container<'a> {
 #[derive(Debug)]
 struct Display<'a> {
     id: u64,
-    bounds: core_graphics::Bounds,
+    bounds: Bounds,
     root: Container<'a>,
 }
 
@@ -98,32 +120,39 @@ fn xs_from_widths(start: f64, widths: &[f64]) -> Vec<f64> {
 impl<'a> Display<'a> {
     fn try_new(cg_display: &'a core_graphics::Display) -> Result<Self> {
         let container = match cg_display.windows.len() {
-            1 => Container::Leaf(Window::try_new(&cg_display.windows[0], cg_display.bounds)?),
+            1 => {
+                let mut w = Window::try_new(&cg_display.windows[0], cg_display.bounds)?;
+                w.init()?;
+                w.lock_observer.run();
+                Container::Leaf(w)
+            }
             n => {
                 let widths = split_n(cg_display.bounds.width, n);
                 let xs = xs_from_widths(cg_display.bounds.x, &widths);
 
+                let mut children = vec![];
+                for i in 0..n {
+                    let mut window = Window::try_new(
+                        &cg_display.windows[i],
+                        Bounds {
+                            width: widths[i],
+                            x: xs[i],
+                            y: cg_display.bounds.y + 31.0,
+                            height: cg_display.bounds.height - 31.0,
+                        },
+                    )?;
+
+                    window.init()?;
+                    children.push(window);
+                }
+
+                for child in &children {
+                    child.lock_observer.run();
+                }
+
                 Container::Split {
                     direction: Direction::default(),
-                    children: cg_display
-                        .windows
-                        .iter()
-                        .enumerate()
-                        .map(|(i, cgw)| {
-                            Window::try_new(
-                                cgw,
-                                Bounds {
-                                    width: widths[i],
-                                    x: xs[i],
-                                    height: cg_display.bounds.height,
-                                    y: cg_display.bounds.y,
-                                },
-                            )
-                        })
-                        .collect::<Result<Vec<_>>>()?
-                        .iter()
-                        .map(|w| Container::Leaf(*w))
-                        .collect(),
+                    children: children.into_iter().map(Container::Leaf).collect(),
                 }
             }
         };
@@ -137,6 +166,10 @@ impl<'a> Display<'a> {
     }
 }
 
+struct CloseContext<'a> {
+    display: &'a Display<'a>,
+}
+
 fn main() {
     let displays = core_graphics::Display::all()
         .unwrap()
@@ -144,17 +177,6 @@ fn main() {
         .map(Display::try_new)
         .collect::<Result<Vec<_>>>()
         .unwrap();
-
-    // let cgw = &d.windows[0];
-    //
-    // let w = Window::try_new(&cgw, d.bounds.with_pad(40.0)).unwrap();
-    // let left_display = Display {
-    //     id: 3,
-    //     bounds: d.bounds,
-    //     root: Container::Leaf(w),
-    // };
-    //
-    // println!("{left_display:?}");
 
     unsafe { CFRunLoopRun() };
 }

@@ -1,30 +1,29 @@
+use crate::Error::CoreFoundation;
 use crate::bits::{
-    AXError, AXObserverAddNotification, AXObserverCallback, AXObserverCreate,
-    AXObserverGetRunLoopSource, AXObserverRef, AXObserverRemoveNotification,
-    AXUIElementCopyAttributeValue, AXUIElementCreateApplication, AXUIElementSetAttributeValue,
-    AXValueCreate, AXValueGetValue, AXValueRef, AXValueType, AxUiElementRef,
+    AXError, AXUIElementCopyAttributeValue, AXUIElementCreateApplication,
+    AXUIElementSetAttributeValue, AXValueCreate, AXValueType, AxUiElementRef,
 };
 use crate::{Error, Result};
 use core_foundation::{
-    CFArrayGetCount, CFArrayGetValueAtIndex, CFArrayRef, CFRunLoopAddSource, CFRunLoopGetCurrent,
-    CFStringCreateWithCString, CFStringEncoding, CFStringRef, kCFRunLoopDefaultMode,
+    CFArrayGetCount, CFArrayGetValueAtIndex, CFArrayRef, CFIndex, CFStringCreateWithCString,
+    CFStringEncoding, CFStringGetCString, CFStringGetLength, CFStringGetMaximumSizeForEncoding,
+    CFStringRef,
 };
-use core_graphics::{Bounds, CGPoint, CGRect, CGSize};
-use std::ffi::c_void;
+use core_graphics::{CGPoint, CGSize};
+use std::ffi::{CStr, c_void};
 
 #[derive(Debug, Copy, Clone)]
 pub struct Window {
     owner_pid: libc::pid_t,
     application_ref: AxUiElementRef,
     window_ref: AxUiElementRef,
-    observer_ref: Option<AXObserverRef>,
 }
 
 impl Window {
     // Not all AXUI window necessarily contain the same unique window ID as core_graphics provides.
     // Unfortunately the most reliable way to match a core_graphics window to an AXUI window using
-    // its bounds.
-    pub fn new(owner_pid: libc::pid_t, bounds: &Bounds) -> Result<Self> {
+    // its name.
+    pub fn new(owner_pid: libc::pid_t, search_title: String) -> Result<Self> {
         if !pid_exists(owner_pid) {
             return Err(Error::PidDoesNotExist(owner_pid));
         }
@@ -35,14 +34,14 @@ impl Window {
         for i in 0..unsafe { CFArrayGetCount(windows_array_ref) } {
             let window_ref =
                 unsafe { CFArrayGetValueAtIndex(windows_array_ref, i) } as AxUiElementRef;
-            let point = get_window_position(window_ref)?;
 
-            if point.x == bounds.x && point.y == bounds.y {
+            // TODO: so flakey...
+            let title = get_window_title(window_ref)?;
+            if title.contains(&search_title) {
                 return Ok(Self {
                     owner_pid,
                     application_ref,
                     window_ref,
-                    observer_ref: None,
                 });
             }
         }
@@ -50,8 +49,8 @@ impl Window {
         Err(Error::CouldNotFindWindow(owner_pid))
     }
 
-    pub fn application_ref(&self) -> AxUiElementRef {
-        self.application_ref
+    pub fn window_ref(&self) -> AxUiElementRef {
+        self.window_ref
     }
 
     pub fn move_to(&self, x: f64, y: f64) -> Result<()> {
@@ -85,65 +84,6 @@ impl Window {
             None => Ok(()),
         }
     }
-
-    pub fn create_lock_callback(
-        &self,
-        point: CGPoint,
-        size: CGSize,
-    ) -> (AXObserverCallback, *mut c_void) {
-        let ctx = Box::new(WindowLockCallbackContext {
-            window: self.window_ref,
-            point,
-            size,
-        });
-
-        let ctx_ptr = Box::into_raw(ctx);
-
-        extern "C" fn callback(
-            _observer: AXObserverRef,
-            _element: AxUiElementRef,
-            _notification: CFStringRef,
-            context: *mut c_void,
-        ) {
-            let ctx: &WindowLockCallbackContext =
-                unsafe { &*(context as *const WindowLockCallbackContext) };
-
-            let ax_value = unsafe {
-                AXValueCreate(
-                    AXValueType::CG_POINT,
-                    &ctx.point as *const _ as *const c_void,
-                )
-            };
-            // TODO: handle
-            let res = unsafe {
-                AXUIElementSetAttributeValue(
-                    ctx.window,
-                    cfstring("AXPosition").unwrap(),
-                    ax_value.cast(),
-                )
-            };
-            let ax_value = unsafe {
-                AXValueCreate(AXValueType::CG_SIZE, &ctx.size as *const _ as *const c_void)
-            };
-            // TODO: handle
-            let res = unsafe {
-                AXUIElementSetAttributeValue(
-                    ctx.window,
-                    cfstring("AXSize").unwrap(),
-                    ax_value.cast(),
-                )
-            };
-        }
-
-        (callback, ctx_ptr as *mut c_void)
-    }
-}
-
-#[repr(C)]
-struct WindowLockCallbackContext {
-    window: AxUiElementRef,
-    point: CGPoint,
-    size: CGSize,
 }
 
 // TODO: newtype for CfStringRef and impl a TryFrom<&str>
@@ -172,28 +112,35 @@ fn get_window_ref_array(application_ref: AxUiElementRef) -> Result<CFArrayRef> {
     }
 }
 
-fn get_window_position(window: AxUiElementRef) -> Result<CGPoint> {
-    let position_attr = cfstring("AXPosition")?;
-    let mut number_ref: *const c_void = std::ptr::null_mut();
-
+fn get_window_title(window: AxUiElementRef) -> Result<String> {
+    let attr = cfstring("AXTitle")?;
+    let mut value: *const c_void = std::ptr::null();
     if let Some(err) =
-        AXError(unsafe { AXUIElementCopyAttributeValue(window, position_attr, &mut number_ref) })
-            .into()
+        AXError(unsafe { AXUIElementCopyAttributeValue(window, attr, &mut value) }).into()
     {
         return Err(err);
     }
 
-    let mut point = CGPoint { x: 0.0, y: 0.0 };
-    if !unsafe {
-        AXValueGetValue(
-            number_ref as AXValueRef,
-            AXValueType::CG_POINT,
-            &mut point as *mut _ as *mut c_void,
+    let len: CFIndex = unsafe { CFStringGetLength(value as CFStringRef) };
+    let max_size = unsafe { CFStringGetMaximumSizeForEncoding(len, CFStringEncoding::Utf8) };
+
+    let mut buffer = vec![0u8; max_size as usize];
+    let success = unsafe {
+        CFStringGetCString(
+            value as CFStringRef,
+            buffer.as_mut_ptr().cast(),
+            max_size,
+            CFStringEncoding::Utf8,
         )
-    } {
-        // TODO: error for not fetching value
-        Err(Error::Unknown)
+    };
+
+    if success {
+        let cstr = unsafe { CStr::from_ptr(buffer.as_ptr().cast()) };
+        cstr.to_str()
+            .map(String::from)
+            .map_err(|e| CoreFoundation(core_foundation::Error::InvalidCString(e)))
     } else {
-        Ok(point)
+        // TODO: specific error type
+        Err(CoreFoundation(core_foundation::Error::NulString))
     }
 }

@@ -26,7 +26,7 @@ impl CGError {
 pub type CGFloat = f64;
 
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct CGPoint {
     pub x: CGFloat,
     pub y: CGFloat,
