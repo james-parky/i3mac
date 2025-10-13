@@ -10,8 +10,12 @@ enum Direction {
 
 #[derive(Debug)]
 enum Container<'a> {
-    Leaf(Window<'a>),
+    Leaf {
+        bounds: Bounds,
+        window: Window<'a>,
+    },
     Split {
+        bounds: Bounds,
         direction: Direction,
         children: Vec<Container<'a>>,
     },
@@ -19,26 +23,35 @@ enum Container<'a> {
 
 impl<'a> Container<'a> {
     fn try_from_window(window: &'a core_graphics::Window, bounds: Bounds) -> crate::Result<Self> {
-        let mut w = Window::try_new(window, bounds)?;
-        w.init()?;
-        Ok(Self::Leaf(w))
+        let mut window = Window::try_new(window, bounds)?;
+        window.init()?;
+        Ok(Self::Leaf { bounds, window })
     }
 
     fn try_from_windows(
         windows: &'a [core_graphics::Window],
-        bounds: &[Bounds],
+        bounds: Bounds,
     ) -> crate::Result<Self> {
+        let n = windows.len();
+        let widths = split_n(bounds.width, n);
+        let xs = xs_from_widths(bounds.x, &widths);
+        let child_bounds: Vec<Bounds> = widths
+            .into_iter()
+            .zip(xs.into_iter())
+            .map(|(width, x)| Bounds { width, x, ..bounds })
+            .collect();
         let children: Vec<Container> = windows
             .iter()
-            .zip(bounds.iter())
+            .zip(child_bounds.iter())
             .map(|(w, &b)| {
-                let mut w = Window::try_new(&w, b)?;
-                w.init()?;
-                Ok(Container::Leaf(w))
+                let mut window = Window::try_new(&w, b)?;
+                window.init()?;
+                Ok(Container::Leaf { bounds: b, window })
             })
             .collect::<crate::Result<_>>()?;
 
         Ok(Self::Split {
+            bounds,
             direction: Direction::default(),
             children,
         })
@@ -56,21 +69,7 @@ impl<'a> Display<'a> {
     pub(crate) fn try_new(display: &'a core_graphics::Display) -> crate::Result<Self> {
         let container = match display.windows.len() {
             1 => Container::try_from_window(&display.windows[0], display.bounds)?,
-            n => {
-                let widths = split_n(display.bounds.width, n);
-                let xs = xs_from_widths(display.bounds.x, &widths);
-                let bounds: Vec<Bounds> = widths
-                    .into_iter()
-                    .zip(xs.into_iter())
-                    .map(|(width, x)| Bounds {
-                        width,
-                        x,
-                        ..display.bounds
-                    })
-                    .collect();
-
-                Container::try_from_windows(&display.windows, &bounds)?
-            }
+            _ => Container::try_from_windows(&display.windows, display.bounds)?,
         };
 
         Ok(Self {
