@@ -4,7 +4,7 @@ mod window;
 use crate::display::Display;
 use core_foundation::CFRunLoopRun;
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 enum Error {
     AxUi(ax_ui::Error),
     CoreGraphics(core_graphics::Error),

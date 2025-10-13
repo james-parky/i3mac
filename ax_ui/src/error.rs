@@ -4,7 +4,7 @@ use crate::bits;
 use crate::bits::AxUiElementRef;
 use crate::observer::Observer;
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum Error {
     ApiDisable,
     ActionUnsupported,

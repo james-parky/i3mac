@@ -12,6 +12,14 @@ pub(crate) struct Window<'a> {
 }
 
 impl<'a> Window<'a> {
+    pub(crate) fn ax(&self) -> &ax_ui::Window {
+        &self.ax
+    }
+
+    pub(crate) fn cg(&self) -> &core_graphics::Window {
+        &self.cg
+    }
+
     pub(crate) fn init(&mut self) -> crate::Result<()> {
         self.ax
             .move_to(self.bounds.x, self.bounds.y)
@@ -29,16 +37,7 @@ impl<'a> Window<'a> {
         let mut ax_window =
             ax_ui::Window::new(cg_window.owner_pid(), search_name).map_err(Error::AxUi)?;
 
-        let context = LockContext {
-            window: Rc::new(ax_window),
-            point: bounds.point(),
-            size: bounds.size(),
-        };
-
-        let lock_callback = Rc::new(Callback::new(context, |ctx| {
-            let _ = ctx.window.resize(ctx.size.width, ctx.size.height);
-            let _ = ctx.window.move_to(ctx.point.x, ctx.point.y);
-        }));
+        let lock_callback = Window::lock_callback(&ax_window, bounds);
 
         let observer =
             Observer::try_new(cg_window.owner_pid(), &lock_callback).map_err(Error::AxUi)?;
@@ -57,6 +56,48 @@ impl<'a> Window<'a> {
             lock_observer: observer,
             bounds,
         })
+    }
+
+    pub(crate) fn update_lock(&mut self, new_bounds: Bounds) -> crate::Result<()> {
+        self.lock_observer
+            .remove_notification(self.ax.window_ref(), "AXResized")
+            .map_err(Error::AxUi)?;
+        self.lock_observer
+            .remove_notification(self.ax.window_ref(), "AXMoved")
+            .map_err(Error::AxUi)?;
+
+        self.bounds = new_bounds;
+        self.ax
+            .move_to(new_bounds.x, new_bounds.y)
+            .map_err(Error::AxUi)?;
+        self.ax
+            .resize(new_bounds.width, new_bounds.height)
+            .map_err(Error::AxUi)?;
+
+        let lock_callback = Window::lock_callback(&self.ax, new_bounds);
+
+        self.lock_observer
+            .add_notification(self.ax.window_ref(), "AXResized", lock_callback.ctx)
+            .map_err(Error::AxUi)?;
+        self.lock_observer
+            .add_notification(self.ax.window_ref(), "AXMoved", lock_callback.ctx)
+            .map_err(Error::AxUi)?;
+
+        self.lock_observer.run();
+        Ok(())
+    }
+
+    fn lock_callback(ax: &ax_ui::Window, bounds: Bounds) -> Rc<Callback> {
+        let context = LockContext {
+            window: Rc::new(ax.clone()),
+            point: bounds.point(),
+            size: bounds.size(),
+        };
+
+        Rc::new(Callback::new(context, |ctx| {
+            let _ = ctx.window.resize(ctx.size.width, ctx.size.height);
+            let _ = ctx.window.move_to(ctx.point.x, ctx.point.y);
+        }))
     }
 }
 

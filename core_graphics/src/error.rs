@@ -2,7 +2,7 @@ use crate::bits;
 use std::ffi::NulError;
 use std::str::Utf8Error;
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum Error {
     CannotComplete,
     Failure,

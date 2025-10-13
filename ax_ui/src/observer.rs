@@ -1,6 +1,6 @@
 use crate::bits::{
     AXError, AXObserverAddNotification, AXObserverCallback, AXObserverCreate,
-    AXObserverGetRunLoopSource, AXObserverRef, AxUiElementRef,
+    AXObserverGetRunLoopSource, AXObserverRef, AXObserverRemoveNotification, AxUiElementRef,
 };
 use crate::window::cfstring;
 use crate::{Error, Result};
@@ -36,6 +36,17 @@ impl Observer {
         let event = cfstring(event)?;
 
         match AXError(unsafe { AXObserverAddNotification(self.ax_ref, window_ref, event, ctx) }) {
+            AXError::SUCCESS => {}
+            err => return Err(Error::CouldNotAttachNotification(window_ref, err)),
+        }
+
+        Ok(())
+    }
+
+    pub fn remove_notification(&self, window_ref: AxUiElementRef, event: &str) -> Result<()> {
+        let event = cfstring(event)?;
+
+        match AXError(unsafe { AXObserverRemoveNotification(self.ax_ref, window_ref, event) }) {
             AXError::SUCCESS => {}
             err => return Err(Error::CouldNotAttachNotification(window_ref, err)),
         }
