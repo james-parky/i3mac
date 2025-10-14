@@ -23,7 +23,7 @@ impl CGError {
     pub const TYPE_CHECK: Self = Self(1008);
 }
 
-pub type CGFloat = f64;
+type CGFloat = f64;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
