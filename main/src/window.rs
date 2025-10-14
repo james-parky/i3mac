@@ -58,35 +58,6 @@ impl<'a> Window<'a> {
         })
     }
 
-    pub(crate) fn update_lock(&mut self, new_bounds: Bounds) -> crate::Result<()> {
-        self.lock_observer
-            .remove_notification(self.ax.window_ref(), "AXResized")
-            .map_err(Error::AxUi)?;
-        self.lock_observer
-            .remove_notification(self.ax.window_ref(), "AXMoved")
-            .map_err(Error::AxUi)?;
-
-        self.bounds = new_bounds;
-        self.ax
-            .move_to(new_bounds.x, new_bounds.y)
-            .map_err(Error::AxUi)?;
-        self.ax
-            .resize(new_bounds.width, new_bounds.height)
-            .map_err(Error::AxUi)?;
-
-        let lock_callback = Window::lock_callback(&self.ax, new_bounds);
-
-        self.lock_observer
-            .add_notification(self.ax.window_ref(), "AXResized", lock_callback.ctx)
-            .map_err(Error::AxUi)?;
-        self.lock_observer
-            .add_notification(self.ax.window_ref(), "AXMoved", lock_callback.ctx)
-            .map_err(Error::AxUi)?;
-
-        self.lock_observer.run();
-        Ok(())
-    }
-
     fn lock_callback(ax: &ax_ui::Window, bounds: Bounds) -> Rc<Callback> {
         let context = LockContext {
             window: Rc::new(ax.clone()),

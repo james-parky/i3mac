@@ -24,18 +24,10 @@ fn main() {
                     .iter()
                     .filter_map(|(id, display)| Display::try_new(display).ok().map(|d| (*id, d)))
                     .collect();
-
-                println!("POLLED");
             }
             Err(err) => {
                 println!("POLL ERROR: {err:?}")
             }
         }
     }
-    // let _ = core_graphics::Display::all()
-    //     .unwrap()
-    //     .values()
-    //     .map(Display::try_new)
-    //     .collect::<Result<Vec<_>>>()
-    //     .unwrap();
 }
