@@ -25,21 +25,124 @@ pub type CFStringRef = *const c_void;
 
 #[link(name = "ApplicationServices", kind = "framework")]
 unsafe extern "C" {
-    pub fn CFArrayGetCount(array: CFArrayRef) -> CFIndex;
-    pub fn CFArrayGetValueAtIndex(array: CFArrayRef, index: CFIndex) -> *const c_void;
-    pub fn CFDictionaryGetCount(dictionary: CFDictionaryRef) -> CFIndex;
+    /// Returns the number of values currently in an array.
+    ///
+    /// # Arguments
+    ///
+    /// * `the_array` - The array to examine.
+    ///
+    /// # Returns
+    ///
+    /// The number of values in the array.
+    pub fn CFArrayGetCount(the_array: CFArrayRef) -> CFIndex;
+
+    /// Retrieves a value at a given index.
+    ///
+    /// # Arguments
+    ///
+    /// * `the_array` - The array to examine.
+    /// * `idx` - The index of the value to retrieve. If the index is outside
+    ///   the index space of `the_array` (0 to N-1 inclusive (where N is the
+    ///   count of `the_array`)), the behaviour is undefined.
+    ///
+    /// # Returns
+    ///
+    /// The value at the `idx` in `the_array`. If the return value is a
+    /// `core_foundation` object, ownership follows 'The Get Rule'.
+    pub fn CFArrayGetValueAtIndex(the_array: CFArrayRef, idx: CFIndex) -> *const c_void;
+
+    /// Returns the number of key-value pairs in a dictionary.
+    ///
+    /// # Arguments
+    ///
+    /// * `the_dict` - The dictionary to examine.
+    ///
+    /// # Returns
+    ///
+    /// The number of key-value pairs in `the_dict`.
+    pub fn CFDictionaryGetCount(the_dict: CFDictionaryRef) -> CFIndex;
+
+    /// Fills two buffers with the keys and values from a dictionary.
+    ///
+    /// # Arguments
+    ///
+    /// * `the_dict` - The dictionary to examine.
+    /// * `keys` - A C array of pointer-sized values that, on return, is filled
+    ///   with keys from `the_dict`. The keys and values C arrays are parallel
+    ///   to each other (that is, the items are the same indices form a
+    ///   key-value pair from the dictionary). This value must be a valid
+    ///   pointer to a C array of the appropriate type and size (that is, a size
+    ///   equal to the count of `the_dict`), or `NULL` if the keys are not
+    ///   required. If the keys are `core_foundation` objects, ownership follows
+    ///   'The Get Rule'.
+    /// * `values` - A C array of pointer-sized values that, on return, is
+    ///   filled with values from `the_dict`. The keys and values C arrays are
+    ///   parallel to each other (that is, the items at the same indices form a
+    ///   key-value pair from the dictionary). This value must be a valid
+    ///   pointer to a C array of the appropriate type and size (that is, a size
+    ///   equal to the count of `the_dict`), or `NULL` if the values are not
+    ///   required. If the values are `core_foundation` objects, ownership
+    ///   follows 'The Get Rule'.
     pub fn CFDictionaryGetKeysAndValues(
-        dictionary: CFDictionaryRef,
+        the_dict: CFDictionaryRef,
         keys: *mut *const c_void,
         values: *mut *const c_void,
-    ) -> *const c_void;
+    );
+
+    /// Creates an immutable string from a C string.
+    ///
+    /// # Arguments
+    ///
+    /// * `alloc` - The allocator to use to allocate memory for the new string.
+    ///   Pass `NULL` or `kCFAllocatorDefault` to use the current default
+    ///   allocator.
+    /// * `c_str` - The `NULL`-terminated C string to be used to create the
+    ///   `CFString` object. The string must use an 8-bit encoding.
+    /// * `encoding` - The encoding of the characters in the C string. The
+    ///   encoding must specify an 8-bit encoding.
+    ///
+    /// # Returns
+    ///
+    /// An immutable string containing `c_str` (after stripping off the `NULL`
+    /// terminating character), or `NULL` if there was a problem creating the
+    /// object. Ownership follows 'The Create Rule'.
+    ///
+    /// # Discussion
+    ///
+    /// A C string is a string of 8-bit characters terminated with an 8-bit
+    /// `NULL`. Unichar and Unichar32 are not considered C strings.
     pub fn CFStringCreateWithCString(
         alloc: CFAllocatorRef,
-        string: *const c_char,
+        c_str: *const c_char,
         encoding: CFStringEncoding,
     ) -> CFStringRef;
+
+    /// Copies the character contents of a string to a local C string buffer
+    /// after converting the characters to a given encoding.
+    ///
+    /// # Arguments
+    ///
+    /// * `the_string` - The string whose contents you wish to access.
+    /// * `buffer` - The C string buffer into which to copy the string. On
+    ///   return, the buffer contains the converted characters. If there is an
+    ///   error in conversion, the buffer contains only partial results.
+    /// * `buffer_size` - The length of `buffer` in bytes.
+    /// * `encoding` - The string encoding to which the character contents of
+    ///   `the_string` should be converted. The encoding must specify an 8-bit
+    ///   encoding.
+    ///
+    /// # Returns
+    ///
+    /// `true` upon success or `false` if the conversion fails or the provided
+    /// buffer is too small.
+    ///
+    /// # Discussion
+    ///
+    /// This function is useful when you need your own copy of a string's
+    /// character data as a C string. You also typically call it as a "backup"
+    /// when a prior call to the `CFStringGetCStringPtr` function fails.
     pub fn CFStringGetCString(
-        string: CFStringRef,
+        the_string: CFStringRef,
         buffer: *mut c_char,
         buffer_size: CFIndex,
         encoding: CFStringEncoding,
@@ -47,7 +150,39 @@ unsafe extern "C" {
     pub fn CFStringGetLength(string: CFStringRef) -> CFIndex;
     pub fn CFStringGetMaximumSizeForEncoding(index: CFIndex, encoding: CFStringEncoding)
     -> CFIndex;
-    pub fn CFStringGetCStringPtr(string: CFStringRef, encoding: CFStringEncoding) -> *const c_char;
+
+    /// Quickly obtains a pointer to a C-string buffer containing the characters
+    /// of a string in a given encoding.
+    ///
+    /// # Arguments
+    ///
+    /// * `the_string` - The string whose contents you wish to access.
+    /// * `encoding` - The string encoding to which the character contents of
+    ///   `the_string` should be converted. The encoding must specify and 8-bit
+    ///   encoding.
+    ///
+    /// # Returns
+    ///
+    /// A pointer to a C string or `NULL` if the internal storage of
+    /// `the_string` does not allow this to be returned efficiently.
+    ///
+    /// # Discussion
+    ///
+    /// This function either returns the requested pointer immediately, with no
+    /// memory allocations and no copying, in constant time, or returns `NULL`.
+    /// If the latter is the result, call an alternative function such as the
+    /// `CFStringGetCString` function to extract the characters.
+    ///
+    /// Whether or not this function returns a valid pointer or `NULL` depends
+    /// on many factors, all of which depend on how the string was created and
+    /// its properties. In addition, the function result might change between
+    /// different releases and on different platforms. So do not count on
+    /// receiving a non-`NULL` result from this function under any
+    /// circumstances.
+    pub fn CFStringGetCStringPtr(
+        the_string: CFStringRef,
+        encoding: CFStringEncoding,
+    ) -> *const c_char;
 
     fn CFNumberGetValue(number: CFNumberRef, type_: CFNumberType, value: *mut c_void) -> bool;
 
