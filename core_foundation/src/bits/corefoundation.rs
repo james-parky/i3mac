@@ -17,10 +17,84 @@ use crate::Result;
 
 use std::ffi::{CStr, CString, c_char, c_ulong, c_void};
 
-pub type CFArrayRef = *const CFArray;
-pub type CFArray = c_void;
+/// `CFArray` and its derived mutable type, `CFMutableArrayRef`, manage ordered
+/// collections of values called arrays. `CFArray` creates static arrays and
+/// `CFMutableArray` creates dynamic arrays.
+///
+/// You create a static array object using either the `CFArrayCreate` or
+/// `CFArrayCreateCopy` function. These functions return an array containing the
+/// values you pass in as arguments. (Note that arrays can’t contain `NULL`
+/// pointers; in most cases, though, you can use the `kCFNull` constant
+/// instead). Values are not copied but retained using the retain callback
+/// provided when an array was created. Similarly, when a value is removed from
+/// an array, it is released using the release callback.
+///
+/// `CFArray`’s two primitive functions `CFArrayGetCount` and
+/// `CFArrayGetValueAtIndex` provide the basis for all other functions in its
+/// interface. The `CFArrayGetCount` function returns the number of elements in
+/// an array; `CFArrayGetValueAtIndex` gives you access to an array’s elements
+/// by index, with index values starting at 0.
+///
+/// A number of `CFArray` functions allow you to operate over a range of values
+/// in an array, for example `CFArrayApplyFunction` lets you apply a function to
+/// values in an array, and `CFArrayBSearchValues` searches an array for the
+/// value that matches its parameter. Recall that a range is defined as
+/// `{start, length}`, therefore to operate over the entire array the range you
+/// supply should be `{0, N}` (where N is the count of the array).
+///
+/// `CFArray` is “toll-free bridged” with its Cocoa Foundation counterpart,
+/// `NSArray`. This means that the `core_foundation` type is interchangeable in
+/// function or method calls with the bridged Foundation object. Therefore, in a
+/// method where you see an `NSArray*` parameter, you can pass in a
+/// `CFArrayRef`, and in a function where you see a `CFArrayRef` parameter, you
+/// can pass in an `NSArray` instance. This also applies to concrete subclasses
+/// of `NSArray`. See Toll-Free Bridged Types for more information on toll-free
+/// bridging.
+pub type CFArrayRef = *const __CFArray;
+pub type __CFArray = c_void;
 
-pub type CFRunLoopSourceRef = *const c_void;
+/// A `CFRunLoopSource` object is an abstraction of an input source that can be
+/// put into a run loop. Input sources typically generate asynchronous events,
+/// such as messages arriving on a network port or actions performed by the
+/// user.
+///
+/// An input source type normally defines an API for creating and operating on
+/// objects of the type, as if it were a separate entity from the run loop, then
+/// provides a function to create a `CFRunLoopSource` for an object. The run
+/// loop source can then be registered with the run loop and act as an
+/// intermediary between the run loop and the actual input source type object.
+/// Examples of input sources include `CFMachPortRef`, `CFMessagePortRef`, and
+/// `CFSocketRef`.
+///
+/// There are two categories of sources. Version 0 sources, so named because the
+/// version field of their context structure is 0, are managed manually by the
+/// application. When a source is ready to fire, some part of the application,
+/// perhaps code on a separate thread waiting for an event, must call
+/// `CFRunLoopSourceSignal` to tell the run loop that the source is ready to
+/// fire. The run loop source for `CFSocket` is currently implemented as a
+/// version 0 source.
+///
+/// Version 1 sources are managed by the run loop and kernel. These sources use
+/// Mach ports to signal when the sources are ready to fire. A source is
+/// automatically signaled by the kernel when a message arrives on the source’s
+/// Mach port. The contents of the message are given to the source to process
+/// when the source is fired. The run loop sources for `CFMachPort` and
+/// `CFMessagePort` are currently implemented as version 1 sources.
+///
+/// When creating your own custom run loop source, you can choose which version
+/// works best for you.
+///
+/// A run loop source can be registered in multiple run loops and run loop modes
+/// at the same time. When the source is signaled, whichever run loop that
+/// happens to detect the signal first will fire the source. Adding a source to
+/// multiple threads’ run loops can be used to manage a pool of “worker” threads
+/// that is processing discrete sets of data, such as client-server messages
+/// over a network or entries in a job queue filled by a “manager” thread. As
+/// messages arrive or jobs get added to the queue, the source gets signaled and
+/// a random thread receives and processes the request.
+pub type CFRunLoopSourceRef = *const __CFRunLoopSource;
+type __CFRunLoopSource = c_void;
+
 pub type CFRunLoopRef = *const c_void;
 pub type CFRunLoopMode = CFStringRef;
 
