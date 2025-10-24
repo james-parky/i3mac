@@ -1,3 +1,17 @@
+//! Core Foundation
+//!
+//! Access low-level functions, primitive data types, and various collection
+//! types that are bridged seamlessly with the Foundation framework.
+//!
+//! # Overview
+//!
+//! Core Foundation is a framework that provides fundamental software services
+//! useful to application services, application environments, and to
+//! applications themselves. Core Foundation also provides abstractions for
+//! common data types, facilitates internationalisation with Unicode string
+//! storage, and offers a suite of utilities such as plug-in support, XML
+//! property lists, URL resource access, and preferences.
+
 use crate::Error;
 use crate::Result;
 
@@ -21,6 +35,42 @@ pub struct CFTypeRef(pub *const c_void);
 pub type CFBooleanRef = *const c_void;
 
 type CFAllocatorRef = *const c_void;
+
+/// `CFString` provides a suite of efficient string-manipulation and
+/// string-conversion functions. It offers seamless Unicode support and
+/// facilitates the sharing of data between Cocoa and C-based programs.
+/// `CFString` objects are immutable—use `CFMutableStringRef` to create and
+/// manage a string that can be changed after it has been created.
+///
+/// `CFString` has two primitive functions, `CFStringGetLength` and
+/// `CFStringGetCharacterAtIndex`, that provide the basis for all other
+/// functions in its interface. The `CFStringGetLength` function returns the
+/// total number (in terms of UTF-16 code pairs) of characters in the string.
+/// The `CFStringGetCharacterAtIndex` function gives access to each character
+/// in the string by index, with index values starting at 0.
+///
+/// `CFString` provides functions for finding and comparing strings. It also
+/// provides functions for reading numeric values from strings, for combining
+/// strings in various ways, and for converting a string to different forms
+/// (such as encoding and case changes). A number of functions, for example
+/// `CFStringFindWithOptions`, allow you to specify a range over which to
+/// operate within a string. The specified range must not exceed the length of
+/// the string. Debugging options may help you to catch any errors that arise if
+/// a range does exceed a string’s length.
+///
+/// Like other `core_foundation` types, you can hash `CFString`s using the
+/// `CFHash` function. You should never, though, store a hash value outside of
+/// your application and expect it to be useful if you read it back in later
+/// (hash values may change between different releases of the operating system).
+///
+/// `CFString` is “toll-free bridged” with its Cocoa Foundation counterpart,
+/// `NSString`. This means that the `core_foundation` type is interchangeable in
+/// function or method calls with the bridged Foundation object. Therefore, in a
+/// method where you see an `NSString*` parameter, you can pass in a
+/// `CFStringRef`, and in a function where you see a `CFStringRef` parameter,
+/// you can pass in an `NSString` instance. This also applies to concrete
+/// subclasses of `NSString`. See Toll-Free Bridged Types for more information
+/// on toll-free bridging.
 pub type CFStringRef = *const c_void;
 
 #[link(name = "ApplicationServices", kind = "framework")]
@@ -147,7 +197,40 @@ unsafe extern "C" {
         buffer_size: CFIndex,
         encoding: CFStringEncoding,
     ) -> bool;
-    pub fn CFStringGetLength(string: CFStringRef) -> CFIndex;
+
+    /// Returns the number (in terms of UTF-16 code pairs) of Unicode characters
+    /// in a string.
+    ///
+    /// # Arguments
+    ///
+    /// * `the_string` - The string to examine.
+    ///
+    /// # Returns
+    ///
+    /// The number (in terms of UTF-16 code pairs) of characters stored in
+    /// `the_string`.
+    pub fn CFStringGetLength(the_string: CFStringRef) -> CFIndex;
+
+    /// Returns the maximum number of bytes a string of a specified length (in
+    /// Unicode characters) will take up if encoded in a specific encoding.
+    ///
+    /// # Arguments
+    ///
+    /// * `length` - The number of Unicode characters to evaluate.
+    /// * `encoding` - The string encoding for the number of characters
+    ///   specified by `length`.
+    ///
+    /// # Returns
+    ///
+    /// The maximum number of bytes that could be need to represent `length`
+    /// number of Unicode characters with the string encoding `encoding`, or
+    /// `kCFNotFound` if the number exceeds `LONG_MAX`.
+    ///
+    /// # Discussion
+    ///
+    /// The number of bytes that the encoding actually ends up requiring when
+    /// converting any particular string could be less than the returned value,
+    /// but never more.
     pub fn CFStringGetMaximumSizeForEncoding(index: CFIndex, encoding: CFStringEncoding)
     -> CFIndex;
 
@@ -184,15 +267,76 @@ unsafe extern "C" {
         encoding: CFStringEncoding,
     ) -> *const c_char;
 
-    fn CFNumberGetValue(number: CFNumberRef, type_: CFNumberType, value: *mut c_void) -> bool;
+    /// Obtains the value of a `CFNumber` object cast to a specific type.
+    ///
+    /// # Arguments
+    ///
+    /// * `number` - The `CFNumber` object to examine.
+    /// * `the_type` - A constant that specifies the data type to return.
+    /// * `value_ptr` - On return, contains the value of `number`.
+    ///
+    /// # Returns
+    ///
+    /// `true` if the operation was successful, otherwise `false`.
+    ///
+    /// # Discussion
+    ///
+    /// If the argument `ype differs from the return type, and the conversion is
+    /// lossy or the return value is out of range, then its function passes
+    /// back and approximate value in `value_ptr` and returns `false`.
+    fn CFNumberGetValue(
+        number: CFNumberRef,
+        the_type: CFNumberType,
+        value_ptr: *mut c_void,
+    ) -> bool;
 
     static kCFBooleanTrue: CFBooleanRef;
     static kCFBooleanFalse: CFBooleanRef;
 
     static kCFAllocatorDefault: CFAllocatorRef;
 
-    pub fn CFEqual(a: CFTypeRef, b: CFTypeRef) -> bool;
-    pub fn CFHash(hash: CFTypeRef) -> usize;
+    /// Determines whether two `core_foundation` objects are considered equal.
+    ///
+    /// # Arguments
+    ///
+    /// * `cf1` - A `CFType` object to compare to `cf2`.
+    /// * `cf2` - A `CFType` object to compare to `cf1`.
+    ///
+    /// # Returns
+    ///
+    /// `true` if `cf1` and `cf2` are of the same type and considered equal,
+    /// otherwise `false`.
+    ///
+    /// # Discussion
+    ///
+    /// Equality is something specific to each `core_foundation` opaque type.
+    /// For example, two `CFNumber` objects are equal if the numeric values they
+    /// represent are equal. Two `CFString` objects are equal if they represent
+    /// identical sequences of characters, regardless of encoding.
+    pub fn CFEqual(cf1: CFTypeRef, cf2: CFTypeRef) -> bool;
+
+    /// Returns a code that can be used to identify an object in a hashing
+    /// structure.
+    ///
+    /// # Arguments
+    ///
+    /// * `cf` - A `CFType` object to examine.
+    ///
+    /// # Returns
+    ///
+    /// An integer of type `CFHashCode` that represents a hashing value for
+    /// `cf`.
+    ///
+    /// # Discussion
+    ///
+    /// Two objects that are equal (as determined by the `CFEqual` function)
+    /// have the same hashing value. However, the converse is not true; two
+    /// objects with the same hashing value might not be equal. That is, hashing
+    /// values are not necessarily unique.
+    ///
+    /// The hashing value for an object might change from release to release or
+    /// from platform to platform.
+    pub fn CFHash(cf: CFTypeRef) -> CFHashCode;
 
     fn CFBooleanGetValue(boolean: CFBooleanRef) -> bool;
 
@@ -201,6 +345,8 @@ unsafe extern "C" {
     pub fn CFRunLoopRun();
     pub static kCFRunLoopDefaultMode: CFRunLoopMode;
 }
+
+type CFHashCode = usize;
 
 #[repr(C)]
 // We use an enum here to be faithful to the Core Graphics library signatures,
