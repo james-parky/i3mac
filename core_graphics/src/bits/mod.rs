@@ -2,6 +2,6 @@ mod coregraphics;
 
 pub(super) use coregraphics::{
     CGDirectDisplayID, CGDisplayBounds, CGError, CGGetActiveDisplayList,
-    CGWindowListCopyWindowInfo, SharingType, StoreType, WindowId, WindowListOption,
+    CGWindowListCopyWindowInfo, SharingType, StoreType, WindowListOption,
 };
-pub use coregraphics::{CGPoint, CGRect, CGSize};
+pub use coregraphics::{CGPoint, CGRect, CGSize, WindowId};

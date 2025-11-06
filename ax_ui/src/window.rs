@@ -1,18 +1,19 @@
-use crate::Error::CoreFoundation;
-use crate::bits::{
-    AXError, AXUIElementCopyAttributeValue, AXUIElementCreateApplication,
-    AXUIElementSetAttributeValue, AXValueCreate, AXValueType, AxUiElementRef,
+use crate::{
+    Error, Result,
+    bits::{
+        _AXUIElementGetWindow, AXError, AXUIElementCopyAttributeValue,
+        AXUIElementCreateApplication, AXUIElementSetAttributeValue, AXValueCreate, AXValueGetValue,
+        AXValueRef, AXValueType, AxUiElementRef,
+    },
 };
-use crate::{Error, Result};
 use core_foundation::{
-    CFArrayGetCount, CFArrayGetValueAtIndex, CFArrayRef, CFIndex, CFStringCreateWithCString,
-    CFStringEncoding, CFStringGetCString, CFStringGetLength, CFStringGetMaximumSizeForEncoding,
-    CFStringRef,
+    CFArrayGetCount, CFArrayGetValueAtIndex, CFArrayRef, CFStringCreateWithCString,
+    CFStringEncoding, CFStringRef, CFTypeRef,
 };
-use core_graphics::{CGPoint, CGSize};
-use std::ffi::{CStr, c_void};
+use core_graphics::{CGPoint, CGSize, WindowId};
+use std::ffi::c_void;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Hash)]
 pub struct Window {
     owner_pid: libc::pid_t,
     application_ref: AxUiElementRef,
@@ -20,10 +21,14 @@ pub struct Window {
 }
 
 impl Window {
-    // Not all AXUI window necessarily contain the same unique window ID as core_graphics provides.
-    // Unfortunately the most reliable way to match a core_graphics window to an AXUI window using
-    // its name.
-    pub fn new(owner_pid: libc::pid_t, search_title: String) -> Result<Self> {
+    const MIN_SIZE_ATTR: &'static str = "AXMinSize";
+    const POSITION_ATTR: &'static str = "AXPosition";
+    const SIZE_ATTR: &'static str = "AXSize";
+    const WINDOWS_ATTR: &'static str = "AXWindows";
+    pub const RESIZED_ATTR: &'static str = "AXResized";
+    pub const MOVED_ATTR: &'static str = "AXMoved";
+
+    pub fn new(owner_pid: libc::pid_t, cg_window_number: WindowId) -> Result<Self> {
         if !pid_exists(owner_pid) {
             return Err(Error::PidDoesNotExist(owner_pid));
         }
@@ -35,9 +40,9 @@ impl Window {
             let window_ref =
                 unsafe { CFArrayGetValueAtIndex(windows_array_ref, i) } as AxUiElementRef;
 
-            // TODO: so flakey...
-            let title = get_window_title(window_ref)?;
-            if title.contains(&search_title) {
+            let ax_window_number =
+                get_window_id(window_ref).ok_or(Error::CouldNotGetWindowNumber(window_ref))?;
+            if ax_window_number == cg_window_number {
                 return Ok(Self {
                     owner_pid,
                     application_ref,
@@ -49,12 +54,41 @@ impl Window {
         Err(Error::CouldNotFindWindow(owner_pid))
     }
 
+    pub fn min_size(&self) -> Result<CGSize> {
+        let attr_name = cfstring(Self::MIN_SIZE_ATTR)?;
+
+        let mut value = std::ptr::null();
+        let result =
+            unsafe { AXUIElementCopyAttributeValue(self.window_ref, attr_name, &mut value) };
+
+        if let Some(err) = AXError(result).into() {
+            return Err(err);
+        }
+
+        let mut size = CGSize {
+            width: 0.0,
+            height: 0.0,
+        };
+
+        if !unsafe {
+            AXValueGetValue(
+                value as AXValueRef,
+                AXValueType::CG_SIZE,
+                &mut size as *mut _ as *mut c_void,
+            )
+        } {
+            Err(Error::CouldNotGetWindowSize(self.application_ref))
+        } else {
+            Ok(size)
+        }
+    }
+
     pub fn window_ref(&self) -> AxUiElementRef {
         self.window_ref
     }
 
     pub fn move_to(&self, x: f64, y: f64) -> Result<()> {
-        let pos_attr = cfstring("AXPosition")?;
+        let pos_attr = cfstring(Self::POSITION_ATTR)?;
         let point = CGPoint { x, y };
         let ax_value =
             unsafe { AXValueCreate(AXValueType::CG_POINT, &point as *const _ as *const c_void) };
@@ -70,7 +104,7 @@ impl Window {
     }
 
     pub fn resize(&self, width: f64, height: f64) -> Result<()> {
-        let size_attr = cfstring("AXSize")?;
+        let size_attr = cfstring(Self::SIZE_ATTR)?;
         let point = CGSize { width, height };
         let ax_value =
             unsafe { AXValueCreate(AXValueType::CG_SIZE, &point as *const _ as *const c_void) };
@@ -99,7 +133,7 @@ fn pid_exists(pid: libc::pid_t) -> bool {
 }
 
 fn get_window_ref_array(application_ref: AxUiElementRef) -> Result<CFArrayRef> {
-    let windows_attr = cfstring("AXWindows")?;
+    let windows_attr = cfstring(Window::WINDOWS_ATTR)?;
     let mut value: *const c_void = std::ptr::null();
 
     match AXError(unsafe {
@@ -112,35 +146,10 @@ fn get_window_ref_array(application_ref: AxUiElementRef) -> Result<CFArrayRef> {
     }
 }
 
-fn get_window_title(window: AxUiElementRef) -> Result<String> {
-    let attr = cfstring("AXTitle")?;
-    let mut value: *const c_void = std::ptr::null();
-    if let Some(err) =
-        AXError(unsafe { AXUIElementCopyAttributeValue(window, attr, &mut value) }).into()
-    {
-        return Err(err);
-    }
-
-    let len: CFIndex = unsafe { CFStringGetLength(value as CFStringRef) };
-    let max_size = unsafe { CFStringGetMaximumSizeForEncoding(len, CFStringEncoding::Utf8) };
-
-    let mut buffer = vec![0u8; max_size as usize];
-    let success = unsafe {
-        CFStringGetCString(
-            value as CFStringRef,
-            buffer.as_mut_ptr().cast(),
-            max_size,
-            CFStringEncoding::Utf8,
-        )
-    };
-
-    if success {
-        let cstr = unsafe { CStr::from_ptr(buffer.as_ptr().cast()) };
-        cstr.to_str()
-            .map(String::from)
-            .map_err(|e| CoreFoundation(core_foundation::Error::InvalidCString(e)))
-    } else {
-        // TODO: specific error type
-        Err(CoreFoundation(core_foundation::Error::NulString))
+fn get_window_id(window: AxUiElementRef) -> Option<WindowId> {
+    unsafe {
+        let mut window_id = WindowId::NULL;
+        let result = _AXUIElementGetWindow(CFTypeRef(window), &mut window_id);
+        if result == 0 { Some(window_id) } else { None }
     }
 }

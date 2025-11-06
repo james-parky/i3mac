@@ -1,17 +1,30 @@
-use crate::bits::{
-    AXError, AXObserverAddNotification, AXObserverCallback, AXObserverCreate,
-    AXObserverGetRunLoopSource, AXObserverRef, AXObserverRemoveNotification, AxUiElementRef,
+use crate::{
+    Error, Result,
+    bits::{
+        AXError, AXObserverAddNotification, AXObserverCallback, AXObserverCreate,
+        AXObserverGetRunLoopSource, AXObserverRef, AXObserverRemoveNotification, AxUiElementRef,
+    },
+    window::cfstring,
 };
-use crate::window::cfstring;
-use crate::{Error, Result};
 use core_foundation::{
-    CFRunLoopAddSource, CFRunLoopGetCurrent, CFStringRef, kCFRunLoopDefaultMode,
+    CFRelease, CFRunLoopAddSource, CFRunLoopGetCurrent, CFRunLoopRemoveSource, CFStringRef,
+    CFTypeRef, kCFRunLoopDefaultMode,
 };
 use std::ffi::c_void;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone, Hash)]
 pub struct Observer {
     ax_ref: AXObserverRef,
+}
+
+impl Drop for Observer {
+    fn drop(&mut self) {
+        unsafe {
+            let source = AXObserverGetRunLoopSource(self.ax_ref);
+            CFRunLoopRemoveSource(CFRunLoopGetCurrent(), source, kCFRunLoopDefaultMode);
+            CFRelease(CFTypeRef(self.ax_ref));
+        }
+    }
 }
 
 impl Observer {
@@ -34,24 +47,19 @@ impl Observer {
         ctx: *mut c_void,
     ) -> Result<()> {
         let event = cfstring(event)?;
-
         match AXError(unsafe { AXObserverAddNotification(self.ax_ref, window_ref, event, ctx) }) {
-            AXError::SUCCESS => {}
-            err => return Err(Error::CouldNotAttachNotification(window_ref, err)),
+            AXError::SUCCESS => Ok(()),
+            err => Err(Error::CouldNotAttachNotification(window_ref, err)),
         }
-
-        Ok(())
     }
 
     pub fn remove_notification(&self, window_ref: AxUiElementRef, event: &str) -> Result<()> {
         let event = cfstring(event)?;
 
         match AXError(unsafe { AXObserverRemoveNotification(self.ax_ref, window_ref, event) }) {
-            AXError::SUCCESS => {}
-            err => return Err(Error::CouldNotAttachNotification(window_ref, err)),
+            AXError::SUCCESS => Ok(()),
+            err => Err(Error::CouldNotAttachNotification(window_ref, err)),
         }
-
-        Ok(())
     }
 
     pub fn run(&self) {
@@ -73,10 +81,18 @@ where
     body: F,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Hash)]
 pub struct Callback {
     pub func: AXObserverCallback,
     pub ctx: *mut c_void,
+}
+
+impl Drop for Callback {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = Box::from_raw(self.ctx);
+        }
+    }
 }
 
 impl Callback {

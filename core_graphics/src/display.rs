@@ -1,16 +1,21 @@
 use crate::bits::{CGDisplayBounds, CGError, CGGetActiveDisplayList};
 use crate::window::Window;
 use crate::{Bounds, DisplayId, Error};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ffi::c_uint;
 
 #[derive(Debug)]
 pub struct Display {
     pub bounds: Bounds,
-    pub windows: Vec<Window>,
+    // pub windows: Vec<Window>,
+    pub windows: HashSet<Window>,
 }
 
 impl Display {
+    pub fn window_ids(&self) -> HashSet<u64> {
+        self.windows.iter().map(|window| window.number()).collect()
+    }
+
     pub fn all() -> crate::Result<HashMap<DisplayId, Display>> {
         let mut displays: HashMap<DisplayId, Display> = Self::active_display_ids()?
             .into_iter()
@@ -19,11 +24,13 @@ impl Display {
 
         for window in Window::all_windows()? {
             match window.get_display_id(&displays) {
-                Some(id) => displays
-                    .get_mut(&id)
-                    .ok_or(Error::NulString)?
-                    .windows
-                    .push(window),
+                Some(id) => {
+                    displays
+                        .get_mut(&id)
+                        .ok_or(Error::NulString)?
+                        .windows
+                        .insert(window);
+                }
                 None => {} // window could not be assigned to a screen; assume it is off-screen
             }
         }
@@ -34,7 +41,7 @@ impl Display {
     fn new(id: DisplayId) -> Display {
         Self {
             bounds: unsafe { CGDisplayBounds(id.into()) }.into(),
-            windows: Vec::new(),
+            windows: HashSet::new(),
         }
     }
 

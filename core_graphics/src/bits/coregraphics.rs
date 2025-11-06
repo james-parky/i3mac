@@ -86,7 +86,7 @@ pub struct CGRect {
 }
 
 /// Specifies whether and how windows are shared between applications.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Eq, PartialEq, Hash, Clone)]
 #[repr(u32)]
 // Created as part of the Core Graphics ffi; yet are unused.
 #[allow(dead_code)]
@@ -103,7 +103,7 @@ pub enum SharingType {
 }
 
 /// Specifies how the window device buffers drawing commands.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Eq, PartialEq, Hash, Clone)]
 #[repr(u32)]
 // Created as part of the Core Graphics ffi; yet are unused.
 #[allow(dead_code)]
@@ -205,11 +205,19 @@ impl BitOr for WindowListOption {
     }
 }
 
+#[derive(Debug, Eq, PartialEq)]
 /// The data type used to store window identifiers.
-#[repr(u32)]
-pub enum WindowId {
+#[repr(transparent)]
+pub struct WindowId(c_uint);
+impl WindowId {
     /// A guaranteed invalid window ID.
-    Null = 0,
+    pub const NULL: Self = Self(0);
+}
+
+impl From<u64> for WindowId {
+    fn from(value: u64) -> Self {
+        Self(value as c_uint)
+    }
 }
 
 #[link(name = "ApplicationServices", kind = "framework")]

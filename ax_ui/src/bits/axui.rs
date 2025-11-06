@@ -1,4 +1,4 @@
-use core_foundation::{CFArrayRef, CFRunLoopSourceRef, CFStringRef};
+use core_foundation::{CFArrayRef, CFRunLoopSourceRef, CFStringRef, CFTypeRef};
 use std::ffi::{c_int, c_uint, c_void};
 
 pub type AxUiElementRef = *const c_void;
@@ -92,6 +92,11 @@ unsafe extern "C" {
     ) -> c_int;
 
     pub fn AXObserverGetRunLoopSource(observer: AXObserverRef) -> CFRunLoopSourceRef;
+
+    pub fn _AXUIElementGetWindow(
+        element: CFTypeRef,
+        out_window_id: *mut core_graphics::WindowId,
+    ) -> c_int;
 }
 
 pub type AXObserverRef = *const c_void;

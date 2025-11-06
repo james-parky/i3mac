@@ -1,17 +1,30 @@
 use crate::Error;
 use ax_ui::{Callback, Observer};
 use core_graphics::{Bounds, CGPoint, CGSize};
-use std::rc::Rc;
+use std::{hash::Hash, rc::Rc};
 
-#[derive(Debug, Clone)]
-pub(crate) struct Window<'a> {
-    cg: &'a core_graphics::Window,
+#[derive(Debug)]
+pub(crate) struct Window {
+    cg: core_graphics::Window,
     ax: ax_ui::Window,
     lock_observer: Observer,
+    lock_callback: Callback,
     bounds: Bounds,
 }
 
-impl<'a> Window<'a> {
+impl Hash for Window {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.cg.number().hash(state);
+    }
+}
+
+impl PartialEq for Window {
+    fn eq(&self, other: &Self) -> bool {
+        self.cg.number() == other.cg.number()
+    }
+}
+
+impl Window {
     pub(crate) fn ax(&self) -> &ax_ui::Window {
         &self.ax
     }
@@ -29,23 +42,24 @@ impl<'a> Window<'a> {
             .map_err(Error::AxUi)
     }
 
-    pub(crate) fn try_new(
-        cg_window: &'a core_graphics::Window,
-        bounds: Bounds,
-    ) -> crate::Result<Self> {
-        let search_name = cg_window.name().unwrap().to_string();
-        let mut ax_window =
-            ax_ui::Window::new(cg_window.owner_pid(), search_name).map_err(Error::AxUi)?;
+    pub(crate) fn try_new(cg_window: core_graphics::Window, bounds: Bounds) -> crate::Result<Self> {
+        let mut ax_window = ax_ui::Window::new(cg_window.owner_pid(), cg_window.number().into())
+            .map_err(Error::AxUi)?;
 
-        let lock_callback = Window::lock_callback(&ax_window, bounds);
-
+        let lock_callback = Window::lock_callback(ax_window, bounds);
+        let ax_window_ref = ax_window.window_ref();
         let observer =
             Observer::try_new(cg_window.owner_pid(), &lock_callback).map_err(Error::AxUi)?;
+
         observer
-            .add_notification(ax_window.window_ref(), "AXResized", lock_callback.ctx)
+            .add_notification(
+                ax_window_ref,
+                ax_ui::Window::RESIZED_ATTR,
+                lock_callback.ctx,
+            )
             .map_err(Error::AxUi)?;
         observer
-            .add_notification(ax_window.window_ref(), "AXMoved", lock_callback.ctx)
+            .add_notification(ax_window_ref, ax_ui::Window::MOVED_ATTR, lock_callback.ctx)
             .map_err(Error::AxUi)?;
 
         observer.run();
@@ -54,21 +68,23 @@ impl<'a> Window<'a> {
             cg: cg_window,
             ax: ax_window,
             lock_observer: observer,
+            lock_callback,
             bounds,
         })
     }
 
-    fn lock_callback(ax: &ax_ui::Window, bounds: Bounds) -> Rc<Callback> {
+    fn lock_callback(ax: ax_ui::Window, bounds: Bounds) -> Callback {
         let context = LockContext {
-            window: Rc::new(ax.clone()),
+            window: Rc::new(ax),
             point: bounds.point(),
             size: bounds.size(),
         };
 
-        Rc::new(Callback::new(context, |ctx| {
+        Callback::new(context, |ctx| {
+            // TODO: logging
             let _ = ctx.window.resize(ctx.size.width, ctx.size.height);
             let _ = ctx.window.move_to(ctx.point.x, ctx.point.y);
-        }))
+        })
     }
 }
 

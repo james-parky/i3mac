@@ -15,7 +15,7 @@
 use crate::Error;
 use crate::Result;
 
-use std::ffi::{CStr, CString, c_char, c_ulong, c_void};
+use std::ffi::{CStr, CString, c_char, c_double, c_ulong, c_void};
 
 /// `CFArray` and its derived mutable type, `CFMutableArrayRef`, manage ordered
 /// collections of values called arrays. `CFArray` creates static arrays and
@@ -95,7 +95,8 @@ pub type __CFArray = c_void;
 pub type CFRunLoopSourceRef = *const __CFRunLoopSource;
 type __CFRunLoopSource = c_void;
 
-pub type CFRunLoopRef = *const c_void;
+pub type CFRunLoopRef = *const __CFRunLoop;
+pub type __CFRunLoop = c_void;
 pub type CFRunLoopMode = CFStringRef;
 
 pub type CFIndex = c_ulong;
@@ -149,6 +150,12 @@ pub type CFStringRef = *const c_void;
 
 #[link(name = "ApplicationServices", kind = "framework")]
 unsafe extern "C" {
+    pub fn CFRunLoopRunInMode(
+        mode: CFRunLoopMode,
+        seconds: CFTimeInterval,
+        return_after_source_handled: bool,
+    );
+    pub fn CFRelease(value: CFTypeRef);
     /// Returns the number of values currently in an array.
     ///
     /// # Arguments
@@ -367,7 +374,7 @@ unsafe extern "C" {
     static kCFBooleanTrue: CFBooleanRef;
     static kCFBooleanFalse: CFBooleanRef;
 
-    static kCFAllocatorDefault: CFAllocatorRef;
+    pub static kCFAllocatorDefault: CFAllocatorRef;
 
     /// Determines whether two `core_foundation` objects are considered equal.
     ///
@@ -415,11 +422,13 @@ unsafe extern "C" {
     fn CFBooleanGetValue(boolean: CFBooleanRef) -> bool;
 
     pub fn CFRunLoopAddSource(rl: CFRunLoopRef, source: CFRunLoopSourceRef, mode: CFRunLoopMode);
+    pub fn CFRunLoopRemoveSource(rl: CFRunLoopRef, source: CFRunLoopSourceRef, mode: CFRunLoopMode);
     pub fn CFRunLoopGetCurrent() -> CFRunLoopRef;
     pub fn CFRunLoopRun();
     pub static kCFRunLoopDefaultMode: CFRunLoopMode;
 }
 
+pub type CFTimeInterval = c_double;
 type CFHashCode = usize;
 
 #[repr(C)]

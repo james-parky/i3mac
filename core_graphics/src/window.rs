@@ -7,9 +7,24 @@ use crate::{
 };
 use core_foundation::{Array, Dictionary};
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct UnitFloat(f32);
+
+impl Hash for UnitFloat {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.to_bits().hash(state);
+    }
+}
+
+impl PartialEq for UnitFloat {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl Eq for UnitFloat {}
 
 impl UnitFloat {
     pub fn new(value: f32) -> Option<UnitFloat> {
@@ -26,7 +41,7 @@ impl UnitFloat {
 }
 
 #[allow(dead_code)]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct Window {
     /// The window's alpha fade level. This number is in the range 0.0 to 1.0,
     /// where 0.0 is fully transparent and 1.0 is fully opaque.
@@ -86,6 +101,14 @@ impl Window {
         &self.bounds
     }
 
+    pub fn owner_name(&self) -> Option<&str> {
+        if let Some(s) = &self.owner_name {
+            Some(s)
+        } else {
+            None
+        }
+    }
+
     pub fn is_user_application(&self) -> bool {
         self.layer == 0
     }
@@ -94,7 +117,7 @@ impl Window {
         let array_ref = unsafe {
             CGWindowListCopyWindowInfo(
                 WindowListOption::EXCLUDE_DESKTOP_ELEMENTS | WindowListOption::ON_SCREEN_ONLY,
-                WindowId::Null,
+                WindowId::NULL,
             )
         };
 

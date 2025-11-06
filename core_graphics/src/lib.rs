@@ -6,7 +6,10 @@ mod window;
 pub use bits::CGPoint;
 pub use bits::CGRect;
 pub use bits::CGSize;
+use std::hash::{Hash, Hasher};
 pub use window::Window;
+
+pub use bits::WindowId;
 
 use core_foundation::{CFDictionaryRef, CFTypeRef, Dictionary};
 pub use display::*;
@@ -45,6 +48,26 @@ pub struct Bounds {
     pub width: f64,
     pub x: f64,
     pub y: f64,
+}
+
+impl PartialEq for Bounds {
+    fn eq(&self, other: &Self) -> bool {
+        self.x.to_bits() == other.x.to_bits()
+            && self.y.to_bits() == other.y.to_bits()
+            && self.width.to_bits() == other.width.to_bits()
+            && self.height.to_bits() == other.height.to_bits()
+    }
+}
+
+impl Eq for Bounds {}
+
+impl Hash for Bounds {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.x.to_bits().hash(state);
+        self.y.to_bits().hash(state);
+        self.width.to_bits().hash(state);
+        self.height.to_bits().hash(state);
+    }
 }
 
 impl Bounds {
