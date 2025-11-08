@@ -30,8 +30,12 @@ pub enum Error {
     CouldNotFindWindow(libc::pid_t),
     CouldNotCreateObserver(libc::pid_t, bits::AXError),
     CouldNotAttachNotification(AxUiElementRef, bits::AXError),
+    CouldNotRemoveNotification(AxUiElementRef, bits::AXError),
     CouldNotGetWindowNumber(AxUiElementRef),
     CouldNotGetWindowSize(AxUiElementRef),
+    CouldNotGetFocusedWindow,
+    CouldNotFocusWindow(AxUiElementRef),
+    CouldNotGetPid,
 }
 
 impl From<bits::AXError> for Option<Error> {

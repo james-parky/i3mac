@@ -62,6 +62,8 @@ unsafe extern "C" {
         value: *const c_void,
     ) -> c_int;
 
+    pub fn AXUIElementPerformAction(element: AxUiElementRef, action: CFStringRef) -> c_int;
+
     pub fn AXUIElementCopyAttributeValue(
         element: AxUiElementRef,
         attribute: CFStringRef,
@@ -97,6 +99,11 @@ unsafe extern "C" {
         element: CFTypeRef,
         out_window_id: *mut core_graphics::WindowId,
     ) -> c_int;
+
+    pub fn AXUIElementCreateSystemWide() -> AxUiElementRef;
+    pub fn AXUIElementGetPid(element: AxUiElementRef, pid: *const libc::pid_t) -> c_int;
+
+    pub fn AXIsProcessTrusted() -> bool;
 }
 
 pub type AXObserverRef = *const c_void;

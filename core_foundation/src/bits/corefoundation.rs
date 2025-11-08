@@ -371,8 +371,8 @@ unsafe extern "C" {
         value_ptr: *mut c_void,
     ) -> bool;
 
-    static kCFBooleanTrue: CFBooleanRef;
-    static kCFBooleanFalse: CFBooleanRef;
+    pub static kCFBooleanTrue: CFBooleanRef;
+    pub static kCFBooleanFalse: CFBooleanRef;
 
     pub static kCFAllocatorDefault: CFAllocatorRef;
 
@@ -426,7 +426,16 @@ unsafe extern "C" {
     pub fn CFRunLoopGetCurrent() -> CFRunLoopRef;
     pub fn CFRunLoopRun();
     pub static kCFRunLoopDefaultMode: CFRunLoopMode;
+    pub fn CFMachPortCreateRunLoopSource(
+        allocator: *mut c_void,
+        tap: CFMachPortRef,
+        order: isize,
+    ) -> *mut c_void;
 }
+
+// TODO: move to own file?
+pub type CFMachPortRef = *const __CFMachPort;
+type __CFMachPort = c_void;
 
 pub type CFTimeInterval = c_double;
 type CFHashCode = usize;

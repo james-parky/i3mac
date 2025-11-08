@@ -205,7 +205,7 @@ impl BitOr for WindowListOption {
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Hash)]
 /// The data type used to store window identifiers.
 #[repr(transparent)]
 pub struct WindowId(c_uint);
@@ -214,8 +214,22 @@ impl WindowId {
     pub const NULL: Self = Self(0);
 }
 
+impl PartialEq<WindowId> for WindowId {
+    fn eq(&self, rhs: &WindowId) -> bool {
+        self.0 == rhs.0
+    }
+}
+
+impl Eq for WindowId {}
+
 impl From<u64> for WindowId {
     fn from(value: u64) -> Self {
+        Self(value as c_uint)
+    }
+}
+
+impl From<u32> for WindowId {
+    fn from(value: u32) -> Self {
         Self(value as c_uint)
     }
 }

@@ -22,6 +22,7 @@ pub enum Error {
     InvalidCString(Utf8Error),
     CoreFoundation(core_foundation::Error),
     CouldNotFindDictionaryKey(String),
+    FailedToCreateKeyboardEventTap,
 }
 
 impl From<bits::CGError> for Option<Error> {

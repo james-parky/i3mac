@@ -5,7 +5,10 @@ use crate::{
     },
     display::Display,
 };
-use core_foundation::{Array, Dictionary};
+use core_foundation::{
+    Array, CFRelease, CFRunLoopGetCurrent, CFRunLoopRemoveSource, CFTypeRef, Dictionary,
+    kCFRunLoopDefaultMode,
+};
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
@@ -89,8 +92,8 @@ impl Window {
         }
     }
 
-    pub fn number(&self) -> u64 {
-        self.number
+    pub fn number(&self) -> WindowId {
+        self.number.into()
     }
 
     pub fn owner_pid(&self) -> libc::pid_t {

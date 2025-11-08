@@ -1,15 +1,16 @@
 mod bits;
 mod display;
 mod error;
+mod keyboard;
 mod window;
 
 pub use bits::CGPoint;
 pub use bits::CGRect;
 pub use bits::CGSize;
+pub use bits::WindowId;
+pub use keyboard::{Direction, KeyCommand, KeyboardHandler};
 use std::hash::{Hash, Hasher};
 pub use window::Window;
-
-pub use bits::WindowId;
 
 use core_foundation::{CFDictionaryRef, CFTypeRef, Dictionary};
 pub use display::*;
@@ -19,7 +20,7 @@ pub use error::Error;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, Ord, PartialOrd)]
 #[allow(dead_code)]
 pub struct DisplayId(u32);
 

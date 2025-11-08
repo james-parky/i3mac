@@ -58,7 +58,7 @@ impl Observer {
 
         match AXError(unsafe { AXObserverRemoveNotification(self.ax_ref, window_ref, event) }) {
             AXError::SUCCESS => Ok(()),
-            err => Err(Error::CouldNotAttachNotification(window_ref, err)),
+            err => Err(Error::CouldNotRemoveNotification(window_ref, err)),
         }
     }
 
@@ -81,7 +81,7 @@ where
     body: F,
 }
 
-#[derive(Debug, Hash)]
+#[derive(Debug, Hash, Clone)]
 pub struct Callback {
     pub func: AXObserverCallback,
     pub ctx: *mut c_void,

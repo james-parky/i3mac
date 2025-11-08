@@ -1,6 +1,6 @@
 use crate::bits::{CGDisplayBounds, CGError, CGGetActiveDisplayList};
 use crate::window::Window;
-use crate::{Bounds, DisplayId, Error};
+use crate::{Bounds, DisplayId, Error, WindowId};
 use std::collections::{HashMap, HashSet};
 use std::ffi::c_uint;
 
@@ -12,7 +12,7 @@ pub struct Display {
 }
 
 impl Display {
-    pub fn window_ids(&self) -> HashSet<u64> {
+    pub fn window_ids(&self) -> HashSet<WindowId> {
         self.windows.iter().map(|window| window.number()).collect()
     }
 

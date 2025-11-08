@@ -1,3 +1,4 @@
+use crate::bits::{AXUIElementCreateSystemWide, AXUIElementGetPid, AXUIElementPerformAction};
 use crate::{
     Error, Result,
     bits::{
@@ -7,17 +8,27 @@ use crate::{
     },
 };
 use core_foundation::{
-    CFArrayGetCount, CFArrayGetValueAtIndex, CFArrayRef, CFStringCreateWithCString,
-    CFStringEncoding, CFStringRef, CFTypeRef,
+    CFArrayGetCount, CFArrayGetValueAtIndex, CFArrayRef, CFRelease, CFStringCreateWithCString,
+    CFStringEncoding, CFStringRef, CFTypeRef, kCFBooleanTrue,
 };
 use core_graphics::{CGPoint, CGSize, WindowId};
+use libc::raise;
 use std::ffi::c_void;
 
-#[derive(Debug, Copy, Clone, Hash)]
+#[derive(Debug, Clone, Hash)]
 pub struct Window {
     owner_pid: libc::pid_t,
     application_ref: AxUiElementRef,
     window_ref: AxUiElementRef,
+}
+
+impl Drop for Window {
+    fn drop(&mut self) {
+        unsafe {
+            CFRelease(CFTypeRef(self.application_ref));
+            CFRelease(CFTypeRef(self.window_ref));
+        }
+    }
 }
 
 impl Window {
@@ -116,6 +127,68 @@ impl Window {
         {
             Some(err) => Err(err),
             None => Ok(()),
+        }
+    }
+
+    pub fn focus(&self) -> Result<()> {
+        let raise_attr = cfstring("AXRaise")?;
+        let result = unsafe { AXUIElementPerformAction(self.window_ref, raise_attr) };
+
+        if result != 0 {
+            return Err(Error::CouldNotFocusWindow(self.window_ref));
+        }
+
+        let attr_name = cfstring("AXMain")?;
+        unsafe {
+            let result = AXUIElementSetAttributeValue(self.window_ref, attr_name, kCFBooleanTrue);
+
+            if result != 0 {
+                return Err(Error::CouldNotFocusWindow(self.window_ref));
+            }
+        }
+
+        // Also try to focus it
+        let focused_attr = cfstring("AXFocused")?;
+        let result =
+            unsafe { AXUIElementSetAttributeValue(self.window_ref, focused_attr, kCFBooleanTrue) };
+
+        if result != 0 {
+            return Err(Error::CouldNotFocusWindow(self.window_ref));
+        }
+
+        unsafe {
+            let result = AXUIElementSetAttributeValue(
+                self.application_ref,
+                cfstring("AXFrontmost")?,
+                kCFBooleanTrue,
+            );
+            if result != 0 {
+                return Err(Error::CouldNotFocusWindow(self.window_ref));
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn get_focused() -> Result<WindowId> {
+        let system_wide = unsafe { AXUIElementCreateSystemWide() };
+        let focussed_attr = cfstring("AXFocusedUIElement")?;
+
+        let mut focused_element: *const c_void = std::ptr::null();
+        let result = unsafe {
+            AXUIElementCopyAttributeValue(system_wide, focussed_attr, &mut focused_element)
+        };
+
+        // TODO: handle properly
+        if result != 0 {
+            println!("{:?}", AXError(result));
+            return Err(Error::CouldNotGetFocusedWindow);
+        }
+
+        let window_result = get_window_id(focused_element);
+        match window_result {
+            Some(window) => Ok(window),
+            None => Err(Error::CouldNotGetWindowNumber(focused_element)),
         }
     }
 }
