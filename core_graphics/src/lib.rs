@@ -7,6 +7,7 @@ mod window;
 pub use bits::CGPoint;
 pub use bits::CGRect;
 pub use bits::CGSize;
+pub use bits::CGWarpMouseCursorPosition;
 pub use bits::WindowId;
 pub use keyboard::{Direction, KeyCommand, KeyboardHandler};
 use std::hash::{Hash, Hasher};
@@ -39,6 +40,12 @@ impl From<DisplayId> for CGDirectDisplayID {
 impl From<usize> for DisplayId {
     fn from(id: usize) -> Self {
         DisplayId(id as u32)
+    }
+}
+
+impl std::fmt::Display for DisplayId {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 

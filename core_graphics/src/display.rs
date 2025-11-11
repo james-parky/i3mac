@@ -1,4 +1,4 @@
-use crate::bits::{CGDisplayBounds, CGError, CGGetActiveDisplayList};
+use crate::bits::{CGDisplayBounds, CGError, CGGetActiveDisplayList, CGMainDisplayID};
 use crate::window::Window;
 use crate::{Bounds, DisplayId, Error, WindowId};
 use std::collections::{HashMap, HashSet};
@@ -12,6 +12,10 @@ pub struct Display {
 }
 
 impl Display {
+    pub fn main_display_bounds() -> Bounds {
+        unsafe { CGDisplayBounds(CGMainDisplayID()).into() }
+    }
+
     pub fn window_ids(&self) -> HashSet<WindowId> {
         self.windows.iter().map(|window| window.number()).collect()
     }

@@ -324,4 +324,8 @@ unsafe extern "C" {
         option: WindowListOption,
         relative_to_window: WindowId,
     ) -> CFArrayRef;
+
+    pub fn CGMainDisplayID() -> CGDirectDisplayID;
+
+    pub fn CGWarpMouseCursorPosition(new_cursor_position: CGPoint) -> c_int;
 }

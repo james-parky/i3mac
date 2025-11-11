@@ -25,6 +25,28 @@ impl PartialEq for Window {
 }
 
 impl Window {
+    pub fn disable_observers(&mut self) -> crate::Result<()> {
+        let _ = self
+            .lock_observer
+            .remove_notification(self.ax.window_ref(), "AXResized")
+            .map_err(Error::AxUi);
+        let _ = self
+            .lock_observer
+            .remove_notification(self.ax.window_ref(), "AXMoved")
+            .map_err(Error::AxUi);
+
+        Ok(())
+    }
+
+    pub fn enable_observers(&mut self) -> crate::Result<()> {
+        self.lock_observer
+            .add_notification(self.ax.window_ref(), "AXResized", self.lock_callback.ctx)
+            .map_err(Error::AxUi)?;
+        self.lock_observer
+            .add_notification(self.ax.window_ref(), "AXMoved", self.lock_callback.ctx)
+            .map_err(Error::AxUi)
+    }
+
     pub(crate) fn ax(&self) -> &ax_ui::Window {
         &self.ax
     }
@@ -88,20 +110,38 @@ impl Window {
         })
     }
 
+    pub fn update_bounds_no_observer_update(&mut self, new_bounds: Bounds) -> crate::Result<()> {
+        self.bounds = new_bounds;
+
+        // Just update the callback context, don't touch observers
+        self.lock_callback = Self::lock_callback(self.ax().clone(), new_bounds);
+
+        self.ax
+            .move_to(new_bounds.x, new_bounds.y)
+            .map_err(Error::AxUi)?;
+        self.ax
+            .resize(new_bounds.width, new_bounds.height)
+            .map_err(Error::AxUi)?;
+
+        Ok(())
+    }
+
     pub fn update_bounds(&mut self, new_bounds: Bounds) -> crate::Result<()> {
         println!("updating bounds for {:?}", self.cg.number());
         self.bounds = new_bounds;
         println!("set bounds");
 
-        self.lock_observer
+        let _ = self
+            .lock_observer
             .remove_notification(self.ax.window_ref(), "AXResized")
-            .map_err(Error::AxUi)?;
+            .map_err(Error::AxUi);
 
         println!("rem obsvs");
 
-        self.lock_observer
+        let _ = self
+            .lock_observer
             .remove_notification(self.ax.window_ref(), "AXMoved")
-            .map_err(Error::AxUi)?;
+            .map_err(Error::AxUi);
 
         println!("rem obsvs");
 

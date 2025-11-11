@@ -5,6 +5,7 @@ mod window;
 use crate::display::Display;
 use core_foundation::{CFRunLoopGetCurrent, CFRunLoopRunInMode, kCFRunLoopDefaultMode};
 use core_graphics::{Direction, DisplayId, KeyCommand, KeyboardHandler, WindowId};
+use foundation::StatusBar;
 use std::{collections::HashMap, hash::Hash, sync::mpsc::channel};
 
 #[derive(Debug, Eq, PartialEq)]
@@ -18,6 +19,9 @@ enum Error {
     CannotAddWindowToLeaf,
     CannotSplitEmptyContainer,
     CannotSplitAlreadySplitContainer,
+    CannotFocusEmptyDisplay,
+    CannotResizeRoot,
+    CannotMoveWindowToSameDisplay,
 }
 
 struct Context {
@@ -41,6 +45,8 @@ fn main() {
         displays: HashMap::new(),
     };
 
+    let mut status_bars: HashMap<DisplayId, StatusBar> = HashMap::new();
+
     loop {
         unsafe { CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.1, false) }
 
@@ -50,6 +56,14 @@ fn main() {
                     display.set_focused_window(focused_window_id);
                     break;
                 }
+            }
+        }
+
+        for (display_id, display) in &ctx.displays {
+            if !status_bars.contains_key(display_id) {
+                let bar = StatusBar::new(*display_id, display.bounds());
+                bar.display();
+                status_bars.insert(*display_id, bar);
             }
         }
 
@@ -130,27 +144,28 @@ fn handle_key_command(command: KeyCommand, ctx: &mut Context) {
             //     println!("Failed to close window: {:?}", e);
             // }
         }
-        KeyCommand::Focus(Direction::Left)
-        | KeyCommand::Focus(Direction::Right)
-        | KeyCommand::Focus(Direction::Up)
-        | KeyCommand::Focus(Direction::Down) => {
-            if let Err(e) = handle_focus_shift(command, &mut ctx.displays) {
+        KeyCommand::Focus(direction) => {
+            if let Err(e) = handle_focus_shift(direction, &mut ctx.displays) {
                 println!("Failed to shift focus: {:?}", e);
             }
         }
-        KeyCommand::FocusDisplay(n) => {
-            if let Err(e) = focus_display(n as u8, &mut ctx.displays) {
-                println!("Failed to focus display: {:?}", e);
+        KeyCommand::FocusDisplay(display_id) => {
+            if let Some(display) = ctx.displays.get(&(display_id as usize).into()) {
+                if let Err(ref err) = display.focus() {
+                    eprintln!("failed to focus display {display_id}: {err:?}")
+                }
+            } else {
+                eprintln!("display {display_id} does not exist");
             }
         }
         KeyCommand::MoveWindowToDisplay(n) => {
-            // if let Err(e) = move_window_to_display(n as u8, displays) {
-            //     println!("Failed to move window: {:?}", e);
-            // }
+            if let Err(e) = move_window_to_display(n, &mut ctx.displays) {
+                println!("Failed to move window: {:?}", e);
+            }
         }
-        KeyCommand::MoveWindow(_direction) => {
-            // if let Ok((_, window_id)) = ax_ui::Window::get_focused() {
-            //     for display in displays.values_mut() {
+        KeyCommand::MoveWindow(direction) => {
+            // if let Ok(window_id) = ax_ui::Window::get_focused() {
+            //     for display in ctx.displays.values_mut() {
             //         if display.move_window(window_id, direction) {
             //             break;
             //         }
@@ -162,6 +177,18 @@ fn handle_key_command(command: KeyCommand, ctx: &mut Context) {
         }
         KeyCommand::ToggleHorizontalSplit => {
             handle_split(&mut ctx.displays, container::Direction::Horizontal);
+        }
+        KeyCommand::ResizeWindow(direction) => {
+            if let Ok(focused_window) = ax_ui::Window::get_focused() {
+                for display in ctx.displays.values_mut() {
+                    if display.window_ids().contains(&focused_window) {
+                        match display.resize_focused(focused_window, &direction) {
+                            Err(e) => println!("error resizing window: {:?}", e),
+                            _ => {}
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -191,7 +218,7 @@ fn open_terminal() {
         .spawn();
 }
 
-fn handle_focus_shift(command: KeyCommand, displays: &HashMap<DisplayId, Display>) -> Result<()> {
+fn handle_focus_shift(direction: Direction, displays: &HashMap<DisplayId, Display>) -> Result<()> {
     let current_window_id = ax_ui::Window::get_focused().map_err(Error::AxUi)?;
 
     // Find which display has the focused window
@@ -204,17 +231,15 @@ fn handle_focus_shift(command: KeyCommand, displays: &HashMap<DisplayId, Display
 
         if let Some(current_idx) = windows.iter().position(|&id| id == current_window_id) {
             // Found the display with this window
-            let next_idx = match command {
-                KeyCommand::Focus(Direction::Left) | KeyCommand::Focus(Direction::Up) => {
+            let next_idx = match direction {
+                Direction::Left | Direction::Up => {
                     if current_idx == 0 {
                         windows.len() - 1
                     } else {
                         current_idx - 1
                     }
                 }
-                KeyCommand::Focus(Direction::Right) | KeyCommand::Focus(Direction::Down) => {
-                    (current_idx + 1) % windows.len()
-                }
+                Direction::Right | Direction::Down => (current_idx + 1) % windows.len(),
                 _ => return Ok(()),
             };
 
@@ -230,18 +255,82 @@ fn handle_focus_shift(command: KeyCommand, displays: &HashMap<DisplayId, Display
     Err(Error::WindowNotFound)
 }
 
-fn focus_display(display_num: u8, displays: &HashMap<DisplayId, Display>) -> Result<()> {
-    let display = displays
-        .get(&(display_num as usize).into())
+// fn move_window_to_display(
+//     display_id: u64, // TODO: type
+//     displays: &mut HashMap<DisplayId, Display>,
+// ) -> Result<()> {
+//     let focused_window = ax_ui::Window::get_focused().map_err(Error::AxUi)?;
+//     let mut removed_window: Option<Window> = None;
+//
+//     for (k, v) in displays.iter() {
+//         println!("display {k}: {v:?}\n\n\n");
+//     }
+//
+//     for display in displays.values_mut() {
+//         if let None = display.get_parent_of_window(focused_window) {
+//             // not in this display
+//             continue;
+//         }
+//
+//         if let Ok(Some(window)) = display.remove_window(focused_window) {
+//             removed_window = Some(window);
+//             // println!("removed window: {:?}", removed_window);
+//             break;
+//         }
+//     }
+//
+//     if removed_window.is_none() {
+//         return Err(Error::WindowNotFound);
+//     }
+//
+//     let cg_window = removed_window.as_ref().unwrap().cg().clone();
+//     drop(removed_window);
+//
+//     // TODO: error
+//     let mut target_display = displays
+//         .get_mut(&(display_id as usize).into())
+//         .ok_or(Error::DisplayNotFound)?;
+//     target_display.add_window(cg_window)
+// }
+fn move_window_to_display(
+    display_id: u64,
+    displays: &mut HashMap<DisplayId, Display>,
+) -> Result<()> {
+    let focused_window = ax_ui::Window::get_focused().map_err(Error::AxUi)?;
+    println!("Trying to move window: {:?}", focused_window);
+
+    // Find the CG window info before removing
+    let mut cg_window: Option<core_graphics::Window> = None;
+
+    for (id, display) in displays.iter() {
+        if let Some(window) = display.find_window(focused_window) {
+            // TODO: lol
+            if *id == (display_id as usize).into() {
+                return Err(Error::CannotMoveWindowToSameDisplay);
+            }
+            cg_window = Some(window.cg().clone());
+            break;
+        }
+    }
+
+    let cg_window = cg_window.ok_or(Error::WindowNotFound)?;
+
+    // Remove from current display
+    for display in displays.values_mut() {
+        if display.remove_window(focused_window)? {
+            println!("Removed window from display");
+            break;
+        }
+    }
+
+    // Add to target display
+    println!("Adding to display {}", display_id);
+    let target_display = displays
+        .get_mut(&(display_id as usize).into())
         .ok_or(Error::DisplayNotFound)?;
 
-    if let Some(&first_window) = display.window_ids().iter().nth(0) {
-        display.focus_window(first_window.into())
-    } else {
-        Err(Error::NoWindowsOnDisplay)
-    }
+    target_display.add_window(cg_window)
 }
-
 fn have_accessibility_permissions() -> bool {
     unsafe { ax_ui::AXIsProcessTrusted() }
 }

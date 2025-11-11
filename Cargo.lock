@@ -24,6 +24,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "foundation"
+version = "0.1.0"
+dependencies = [
+ "core_graphics",
+ "libc",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.177"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -36,4 +44,5 @@ dependencies = [
  "ax_ui",
  "core_foundation",
  "core_graphics",
+ "foundation",
 ]

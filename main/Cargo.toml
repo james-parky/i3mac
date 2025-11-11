@@ -7,3 +7,4 @@ edition = "2024"
 core_graphics = { path = "../core_graphics" }
 core_foundation = { path = "../core_foundation" }
 ax_ui = { path = "../ax_ui" }
+foundation = { path = "../foundation" }

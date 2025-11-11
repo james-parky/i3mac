@@ -1,5 +1,7 @@
-use std::ffi::{c_ulonglong, c_void};
-use std::ops::{BitAnd, Shl};
+use std::{
+    ffi::{c_ulonglong, c_void},
+    ops::Shl,
+};
 
 #[link(name = "ApplicationServices", kind = "framework")]
 unsafe extern "C" {
@@ -14,12 +16,6 @@ unsafe extern "C" {
 
     pub fn CGEventTapEnable(tap: CFMachPortRef, enable: bool);
 
-    pub fn CFMachPortCreateRunLoopSource(
-        allocator: *mut c_void,
-        tap: CFMachPortRef,
-        order: isize,
-    ) -> *mut c_void;
-
     pub fn CGEventGetIntegerValueField(event: CGEventRef, field: u32) -> i64;
 
     pub fn CGEventGetFlags(event: CGEventRef) -> EventFlags;
@@ -27,6 +23,7 @@ unsafe extern "C" {
 
 #[repr(u32)]
 pub enum EventTapLocation {
+    #[allow(dead_code)]
     Hid = 0,
     Session = 1,
 }
@@ -34,12 +31,14 @@ pub enum EventTapLocation {
 #[repr(u32)]
 pub enum EventTapPlacement {
     HeadInsert = 0,
+    #[allow(dead_code)]
     TailAppend = 1,
 }
 
 #[repr(u32)]
 pub enum EventTapOptions {
     Default = 0,
+    #[allow(dead_code)]
     ListenOnly = 1,
 }
 
@@ -55,7 +54,6 @@ pub type CGEventMask = u64;
 pub type CGEventRef = *mut c_void;
 pub type CGEventTapProxy = *mut c_void;
 pub type CFMachPortRef = *mut c_void;
-pub type CGKeyCode = u16;
 
 #[repr(transparent)]
 pub struct EventFlags(c_ulonglong);
@@ -93,8 +91,8 @@ pub type CGEventTapCallBack = extern "C" fn(
     user_info: *mut c_void,
 ) -> CGEventRef;
 
-// Event field constants
-pub const kCGKeyboardEventKeycode: u32 = 9;
+// TODO: does this come from a constant that can be extern "C"-ed?
+pub const KEYBOARD_EVENT_KEYCODE: u32 = 9;
 
 impl Shl<EventType> for u64 {
     type Output = u64;
