@@ -124,8 +124,10 @@ impl Window {
             )
         };
 
-        Ok(Array::<Dictionary>::try_from(array_ref)
-            .map_err(Error::CoreFoundation)?
+        let array = unsafe { Array::<Dictionary>::try_from_raw(array_ref) }
+            .map_err(Error::CoreFoundation)?;
+
+        Ok(array
             .into_iter()
             .filter_map(|dict| Window::try_from(dict).ok())
             .filter(Window::is_user_application)

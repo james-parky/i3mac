@@ -1,15 +1,26 @@
-use crate::Result;
-use crate::{CFArrayGetCount, CFArrayGetValueAtIndex, CFArrayRef, CFIndex, CFTypeRef, Error};
+use crate::{
+    CFArrayGetCount, CFArrayGetValueAtIndex, CFArrayRef, CFIndex, CFTypeRef, Error, Result,
+};
 
 #[derive(Debug)]
 pub struct Array<T: TryFrom<CFTypeRef, Error = Error>>(Vec<T>);
 
-impl<T> TryFrom<CFArrayRef> for Array<T>
+impl<T> IntoIterator for Array<T>
 where
     T: TryFrom<CFTypeRef, Error = Error>,
 {
-    type Error = Error;
-    fn try_from(array: CFArrayRef) -> Result<Array<T>> {
+    type Item = T;
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<T> Array<T>
+where
+    T: TryFrom<CFTypeRef, Error = Error>,
+{
+    pub unsafe fn try_from_raw(array: CFArrayRef) -> Result<Array<T>> {
         if array.is_null() {
             return Err(Error::NullCFArray);
         }
@@ -24,16 +35,5 @@ where
             .collect::<Result<Vec<T>>>()?;
 
         Ok(Array(vec))
-    }
-}
-
-impl<T> IntoIterator for Array<T>
-where
-    T: TryFrom<CFTypeRef, Error = Error>,
-{
-    type Item = T;
-    type IntoIter = std::vec::IntoIter<Self::Item>;
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
     }
 }
