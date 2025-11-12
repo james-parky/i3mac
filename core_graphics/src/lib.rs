@@ -130,8 +130,7 @@ impl TryFrom<CFTypeRef> for CGRect {
             return Err(Error::NulString);
         }
         let dict: CFDictionaryRef = value.0 as CFDictionaryRef;
-        // TODO: more specific?
-        let d = Dictionary::try_from(dict).map_err(Error::CoreFoundation)?;
+        let d = unsafe { Dictionary::try_from_raw(dict) }.map_err(Error::CoreFoundation)?;
 
         // TODO: proper errors
         let x: f64 = d.get(&"X").ok_or(Error::NulString)?;

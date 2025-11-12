@@ -1,13 +1,11 @@
-use crate::bits::{
-    CFDictionaryGetCount, CFDictionaryGetKeysAndValues, CFDictionaryRef, CFEqual, CFHash, CFTypeRef,
+use crate::{
+    Error, Result,
+    bits::{
+        CFDictionaryGetCount, CFDictionaryGetKeysAndValues, CFDictionaryRef, CFEqual, CFHash,
+        CFTypeRef,
+    },
 };
-use crate::{Error, Result};
-use std::collections::HashMap;
-use std::ffi::c_void;
-use std::hash::Hash;
-
-#[derive(Debug)]
-pub struct Dictionary(HashMap<CFKey, CFTypeRef>);
+use std::{collections::HashMap, ffi::c_void, hash::Hash};
 
 #[derive(Debug)]
 struct CFKey(CFTypeRef);
@@ -26,17 +24,29 @@ impl Hash for CFKey {
         h.hash(state);
     }
 }
+
+#[derive(Debug)]
+pub struct Dictionary(HashMap<CFKey, CFTypeRef>);
+
 impl TryFrom<CFTypeRef> for Dictionary {
     type Error = Error;
     fn try_from(value: CFTypeRef) -> Result<Self> {
-        Dictionary::try_from(value.0 as CFDictionaryRef)
+        unsafe { Dictionary::try_from_raw(value.0 as CFDictionaryRef) }
     }
 }
 
-impl TryFrom<CFDictionaryRef> for Dictionary {
-    type Error = Error;
+impl Dictionary {
+    pub fn get<K, V>(&self, key: &K) -> Option<V>
+    where
+        K: TryInto<CFTypeRef> + Copy,
+        V: TryFrom<CFTypeRef>,
+    {
+        let cf_key: CFTypeRef = (*key).try_into().ok()?;
+        let value = self.0.get(&CFKey(cf_key));
+        value.and_then(|&v| V::try_from(v).ok())
+    }
 
-    fn try_from(dict: CFDictionaryRef) -> Result<Self> {
+    pub unsafe fn try_from_raw(dict: CFDictionaryRef) -> Result<Self> {
         if dict.is_null() {
             return Err(Error::NulDictionary);
         }
@@ -58,17 +68,5 @@ impl TryFrom<CFDictionaryRef> for Dictionary {
         }
 
         Ok(Dictionary(inner))
-    }
-}
-
-impl Dictionary {
-    pub fn get<K, V>(&self, key: &K) -> Option<V>
-    where
-        K: TryInto<CFTypeRef> + Copy,
-        V: TryFrom<CFTypeRef>,
-    {
-        let cf_key: CFTypeRef = (*key).try_into().ok()?;
-        let value = self.0.get(&CFKey(cf_key));
-        value.and_then(|&v| V::try_from(v).ok())
     }
 }
