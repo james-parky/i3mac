@@ -1,7 +1,6 @@
 use crate::Error;
-use core_foundation::{CFArrayRef, CFNumberType, CFTypeRef, cf_type_ref_to_num};
+use core_foundation::{CFNumberType, CFTypeRef, cf_type_ref_to_num};
 use std::ffi::{c_int, c_uint};
-use std::ops::BitOr;
 
 /// A unique identifier for an attached display.
 ///
@@ -157,83 +156,6 @@ impl TryFrom<CFTypeRef> for StoreType {
     }
 }
 
-/// The data type used to specify the options for gathering a list of windows.
-#[repr(transparent)]
-// Core Graphics describes this as an enum, but Rust does not allow for BitOr
-// between enum variants, so we use a new-type wrapper around a c_uint and
-// provide constants for what the enum variants would have been.
-pub struct WindowListOption(c_uint);
-
-impl WindowListOption {
-    /// List all windows, including both onscreen and offscreen windows. When
-    /// retrieving a list with this option, the `relative_to_window` argument
-    /// should be set to `WindowId::Null`.
-    #[allow(dead_code)]
-    const ALL: Self = Self(0);
-    /// List all windows that are currently onscreen. Windows are returned in
-    /// order from front to back. When retrieving a list with this option, the
-    /// `relative_to_window` argument should be set to `WindowId::Null`.
-    pub const ON_SCREEN_ONLY: Self = Self(1);
-    /// List all windows that are currently onscreen and in front of the window
-    /// specified in the `relative_to_window` argument. Windows are returned in
-    /// order from front to back.
-    #[allow(dead_code)]
-    const ON_SCREEN_ABOVE_WINDOW: Self = Self(2);
-    /// List all windows that are currently onscreen and behind the window
-    /// specified in the `relative_to_window` argument. Windows are returned in
-    /// order from front to back.
-    #[allow(dead_code)]
-    const ON_SCREEN_BELOW_WINDOW: Self = Self(4);
-    /// Include the specified window (from the `relative_to_window` argument) in
-    /// the returned list. You must combine this option with the
-    /// `WindowListOption::ON_SCREEN_ABOVE_WINDOW` or
-    /// `WindowListOption::ON_SCREEN_BELOW_WINDOW` option to retrieve meaningful
-    /// results.
-    #[allow(dead_code)]
-    const INCLUDING_WINDOW: Self = Self(8);
-    /// Exclude any windows from the list that are elements of the desktop,
-    /// including the background picture and desktop icons. You may combine this
-    /// option with the other options.
-    pub const EXCLUDE_DESKTOP_ELEMENTS: Self = Self(16);
-}
-
-impl BitOr for WindowListOption {
-    type Output = Self;
-
-    fn bitor(self, rhs: Self) -> Self::Output {
-        Self((self.0) | (rhs.0))
-    }
-}
-
-#[derive(Debug, Copy, Clone, Hash)]
-/// The data type used to store window identifiers.
-#[repr(transparent)]
-pub struct WindowId(c_uint);
-impl WindowId {
-    /// A guaranteed invalid window ID.
-    pub const NULL: Self = Self(0);
-}
-
-impl PartialEq<WindowId> for WindowId {
-    fn eq(&self, rhs: &WindowId) -> bool {
-        self.0 == rhs.0
-    }
-}
-
-impl Eq for WindowId {}
-
-impl From<u64> for WindowId {
-    fn from(value: u64) -> Self {
-        Self(value as c_uint)
-    }
-}
-
-impl From<u32> for WindowId {
-    fn from(value: u32) -> Self {
-        Self(value as c_uint)
-    }
-}
-
 #[link(name = "ApplicationServices", kind = "framework")]
 unsafe extern "C" {
     /// Provides a list of displays that are active for drawing.
@@ -241,15 +163,15 @@ unsafe extern "C" {
     /// # Arguments
     ///
     /// * `max_displays` - The size of the `active_displays` array. This value
-    /// determines the maximum number of displays the list includes.
+    ///   determines the maximum number of displays the list includes.
     /// * `active_displays` - A pointer to storage you provide for an array of
-    /// display IDs. On return, the array contains a list of active displays. If
-    /// you pass NULL, on return the display count contains the total number of
-    /// active displays.
+    ///   display IDs. On return, the array contains a list of active displays.
+    ///   If you pass NULL, on return the display count contains the total
+    ///   number of active displays.
     /// * `display_count` - A pointer to a display count variable you provide.
-    /// On return, the display count contains the actual number of displays the
-    /// function added to the `active_displays` array. This value is at most
-    /// `max_displays`.
+    ///   On return, the display count contains the actual number of displays
+    ///   the function added to the `active_displays` array. This value is at
+    ///   most `max_displays`.
     ///
     /// # Returns
     ///
@@ -287,43 +209,6 @@ unsafe extern "C" {
     /// display coordinate space (relative to the upper-left corner of the main
     /// display).
     pub fn CGDisplayBounds(display: CGDirectDisplayID) -> CGRect;
-
-    /// Generates and returns information about the selected windows in the
-    /// current user session.
-    ///
-    /// You can use this function to get detailed information about the
-    /// configuration of one or more windows in the current user session. For
-    /// example, you can use this function to get the bounds of the window, its
-    /// window ID, and information about how it is managed by the window server.
-    /// For the list of keys and values that may be present in the dictionary,
-    /// see `core_graphics::Display`.
-    ///
-    /// Generating the dictionaries for system windows is a relatively expensive
-    /// operation. As always, you should profile your code and adjust your usage
-    /// of this function appropriately for your needs.
-    ///
-    /// # Arguments
-    ///
-    /// * `option` - The options describing which window dictionaries to return.
-    /// Typical options let you return dictionaries for all windows or for
-    /// windows above or below the window specified in the `relative_to_window`
-    /// parameter. For more information, see `WindowListOption`.
-    /// * `relative_to_window` - The ID of the window to use as a reference
-    /// point when determining which other window dictionaries to return. For
-    /// options that do not require a reference window, this parameter can be
-    /// `WindowID::Null`.
-    ///
-    /// # Returns
-    ///
-    /// An array of `CFDictionaryRef` types, each of which contains information
-    /// about one of the windows in the current user session. If there are no
-    /// windows matching the desired criteria, the function returns an empty
-    /// array. If you call this function from outside of a GUI security session
-    /// or when no window server is running, this function returns NULL.
-    pub fn CGWindowListCopyWindowInfo(
-        option: WindowListOption,
-        relative_to_window: WindowId,
-    ) -> CFArrayRef;
 
     pub fn CGMainDisplayID() -> CGDirectDisplayID;
 

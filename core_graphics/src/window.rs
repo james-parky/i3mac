@@ -1,16 +1,19 @@
 use crate::{
     Bounds, DisplayId, Error, Result,
     bits::{
-        CGRect, CGWindowListCopyWindowInfo, SharingType, StoreType, WindowId, WindowListOption,
+        ALPHA_DICTIONARY_KEY, BOUNDS_DICTIONARY_KEY, CGRect, CGWindowListCopyWindowInfo,
+        IS_ON_SCREEN_DICTIONARY_KEY, LAYER_DICTIONARY_KEY, MEMORY_USAGE_BYTES_DICTIONARY_KEY,
+        NAME_DICTIONARY_KEY, NUMBER_DICTIONARY_KEY, OWNER_NAME_DICTIONARY_KEY,
+        OWNER_PID_DICTIONARY_KEY, SHARING_STATE_DICTIONARY_KEY, STORE_TYPE_DICTIONARY_KEY,
+        SharingType, StoreType, WindowId, WindowListOption,
     },
     display::Display,
 };
-use core_foundation::{
-    Array, CFRelease, CFRunLoopGetCurrent, CFRunLoopRemoveSource, CFTypeRef, Dictionary,
-    kCFRunLoopDefaultMode,
+use core_foundation::{Array, Dictionary};
+use std::{
+    collections::HashMap,
+    hash::{Hash, Hasher},
 };
-use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
 
 #[derive(Debug, Clone)]
 pub struct UnitFloat(f32);
@@ -29,21 +32,6 @@ impl PartialEq for UnitFloat {
 
 impl Eq for UnitFloat {}
 
-impl UnitFloat {
-    pub fn new(value: f32) -> Option<UnitFloat> {
-        if (0.0..=1.0).contains(&value) {
-            Some(UnitFloat(value))
-        } else {
-            None
-        }
-    }
-
-    pub fn inner(&self) -> f32 {
-        self.0
-    }
-}
-
-#[allow(dead_code)]
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct Window {
     /// The window's alpha fade level. This number is in the range 0.0 to 1.0,
@@ -82,38 +70,13 @@ macro_rules! get_or_error {
     };
 }
 
-#[allow(dead_code)]
 impl Window {
-    pub fn name(&self) -> Option<&str> {
-        if let Some(s) = &self.name {
-            Some(s)
-        } else {
-            None
-        }
-    }
-
     pub fn number(&self) -> WindowId {
         self.number.into()
     }
 
     pub fn owner_pid(&self) -> libc::pid_t {
         self.owner_pid
-    }
-
-    pub fn bounds(&self) -> &Bounds {
-        &self.bounds
-    }
-
-    pub fn owner_name(&self) -> Option<&str> {
-        if let Some(s) = &self.owner_name {
-            Some(s)
-        } else {
-            None
-        }
-    }
-
-    pub fn is_user_application(&self) -> bool {
-        self.layer == 0
     }
 
     pub fn all_windows() -> Result<Vec<Window>> {
@@ -143,24 +106,16 @@ impl Window {
             .map(|(id, _)| id)
             .copied()
     }
+
+    fn is_user_application(&self) -> bool {
+        self.layer == 0
+    }
 }
 
 impl TryFrom<Dictionary> for Window {
     type Error = Error;
 
     fn try_from(dictionary: Dictionary) -> std::result::Result<Self, Self::Error> {
-        const ALPHA_DICTIONARY_KEY: &str = "kCGWindowAlpha";
-        const BOUNDS_DICTIONARY_KEY: &str = "kCGWindowBounds";
-        const IS_ON_SCREEN_DICTIONARY_KEY: &str = "kCGWindowIsOnscreen";
-        const LAYER_DICTIONARY_KEY: &str = "kCGWindowLayer";
-        const MEMORY_USAGE_BYTES_DICTIONARY_KEY: &str = "kCGWindowMemoryUsage";
-        const NAME_DICTIONARY_KEY: &str = "kCGWindowName";
-        const NUMBER_DICTIONARY_KEY: &str = "kCGWindowNumber";
-        const OWNER_NAME_DICTIONARY_KEY: &str = "kCGWindowOwnerName";
-        const OWNER_PID_DICTIONARY_KEY: &str = "kCGWindowOwnerPID";
-        const SHARING_STATE_DICTIONARY_KEY: &str = "kCGWindowSharingState";
-        const STORE_TYPE_DICTIONARY_KEY: &str = "kCGWindowStoreType";
-
         Ok(Self {
             alpha: UnitFloat(get_or_error!(dictionary, ALPHA_DICTIONARY_KEY)),
             bounds: dictionary

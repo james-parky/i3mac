@@ -4,22 +4,16 @@ mod error;
 mod keyboard;
 mod window;
 
-pub use bits::CGPoint;
-pub use bits::CGRect;
-pub use bits::CGSize;
-pub use bits::CGWarpMouseCursorPosition;
-pub use bits::WindowId;
+pub use bits::{CGPoint, CGRect, CGSize, CGWarpMouseCursorPosition, WindowId};
+pub use error::Error;
 pub use keyboard::{Direction, KeyCommand, KeyboardHandler};
-use std::hash::{Hash, Hasher};
 pub use window::Window;
-
-use core_foundation::{CFDictionaryRef, CFTypeRef, Dictionary};
+pub type Result<T> = std::result::Result<T, Error>;
 pub use display::*;
 
 use crate::bits::CGDirectDisplayID;
-pub use error::Error;
-
-pub type Result<T> = std::result::Result<T, Error>;
+use core_foundation::{CFDictionaryRef, CFTypeRef, Dictionary};
+use std::hash::{Hash, Hasher};
 
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, Ord, PartialOrd)]
 #[allow(dead_code)]

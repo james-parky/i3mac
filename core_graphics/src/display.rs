@@ -27,15 +27,12 @@ impl Display {
             .collect();
 
         for window in Window::all_windows()? {
-            match window.get_display_id(&displays) {
-                Some(id) => {
-                    displays
-                        .get_mut(&id)
-                        .ok_or(Error::NulString)?
-                        .windows
-                        .insert(window);
-                }
-                None => {} // window could not be assigned to a screen; assume it is off-screen
+            if let Some(id) = window.get_display_id(&displays) {
+                displays
+                    .get_mut(&id)
+                    .ok_or(Error::NulString)?
+                    .windows
+                    .insert(window);
             }
         }
 

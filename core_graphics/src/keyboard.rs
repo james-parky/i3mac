@@ -4,7 +4,7 @@ use crate::{
     bits::{
         CGEventGetFlags, CGEventGetIntegerValueField, CGEventRef, CGEventTapCreate,
         CGEventTapEnable, CGEventTapProxy, EventTapLocation, EventTapOptions, EventTapPlacement,
-        EventType, kCGKeyboardEventKeycode,
+        EventType, KEYBOARD_EVENT_KEYCODE,
     },
 };
 use core_foundation::{
@@ -41,6 +41,12 @@ impl From<EventFlags> for Vec<Modifier> {
     }
 }
 
+impl Modifier {
+    const CMD_CTRL: [Self; 2] = [Self::Command, Self::Control];
+    const CMD_OPTN: [Self; 2] = [Self::Command, Self::Option];
+    const CMD_OPTN_SHFT: [Self; 3] = [Self::Command, Self::Option, Self::Shift];
+}
+
 #[derive(Debug, PartialEq, Eq, Hash)]
 struct HotKey<'a> {
     modifiers: &'a [Modifier],
@@ -52,94 +58,48 @@ impl<'a> HotKey<'a> {
         Self { modifiers, key }
     }
 
-    const RESIZE_LEFT: Self =
-        Self::new(&[Modifier::Command, Modifier::Control], Keycode::LeftArrow);
-    const RESIZE_RIGHT: Self =
-        Self::new(&[Modifier::Command, Modifier::Control], Keycode::RightArrow);
-    const RESIZE_UP: Self = Self::new(&[Modifier::Command, Modifier::Control], Keycode::UpArrow);
-    const RESIZE_DOWN: Self =
-        Self::new(&[Modifier::Command, Modifier::Control], Keycode::DownArrow);
+    // TODO: use macros?
+    const RESIZE_LEFT: Self = Self::new(&Modifier::CMD_CTRL, Keycode::LeftArrow);
+    const RESIZE_RIGHT: Self = Self::new(&Modifier::CMD_CTRL, Keycode::RightArrow);
+    const RESIZE_UP: Self = Self::new(&Modifier::CMD_CTRL, Keycode::UpArrow);
+    const RESIZE_DOWN: Self = Self::new(&Modifier::CMD_CTRL, Keycode::DownArrow);
 
-    const OPEN_TERMINAL: Self = Self::new(&[Modifier::Command, Modifier::Option], Keycode::Return);
+    const OPEN_TERMINAL: Self = Self::new(&Modifier::CMD_OPTN, Keycode::Return);
 
-    const FOCUS_LEFT: Self = Self::new(&[Modifier::Command, Modifier::Option], Keycode::LeftArrow);
-    const FOCUS_RIGHT: Self =
-        Self::new(&[Modifier::Command, Modifier::Option], Keycode::RightArrow);
-    const FOCUS_UP: Self = Self::new(&[Modifier::Command, Modifier::Option], Keycode::UpArrow);
-    const FOCUS_DOWN: Self = Self::new(&[Modifier::Command, Modifier::Option], Keycode::DownArrow);
+    const FOCUS_LEFT: Self = Self::new(&Modifier::CMD_OPTN, Keycode::LeftArrow);
+    const FOCUS_RIGHT: Self = Self::new(&Modifier::CMD_OPTN, Keycode::RightArrow);
+    const FOCUS_UP: Self = Self::new(&Modifier::CMD_OPTN, Keycode::UpArrow);
+    const FOCUS_DOWN: Self = Self::new(&Modifier::CMD_OPTN, Keycode::DownArrow);
 
-    const MOVE_WINDOW_LEFT: Self = Self::new(
-        &[Modifier::Command, Modifier::Option, Modifier::Shift],
-        Keycode::LeftArrow,
-    );
-    const MOVE_WINDOW_RIGHT: Self = Self::new(
-        &[Modifier::Command, Modifier::Option, Modifier::Shift],
-        Keycode::RightArrow,
-    );
-    const MOVE_WINDOW_UP: Self = Self::new(
-        &[Modifier::Command, Modifier::Option, Modifier::Shift],
-        Keycode::UpArrow,
-    );
-    const MOVE_WINDOW_DOWN: Self = Self::new(
-        &[Modifier::Command, Modifier::Option, Modifier::Shift],
-        Keycode::DownArrow,
-    );
+    const MOVE_WINDOW_LEFT: Self = Self::new(&Modifier::CMD_OPTN_SHFT, Keycode::LeftArrow);
+    const MOVE_WINDOW_RIGHT: Self = Self::new(&Modifier::CMD_OPTN_SHFT, Keycode::RightArrow);
+    const MOVE_WINDOW_UP: Self = Self::new(&Modifier::CMD_OPTN_SHFT, Keycode::UpArrow);
+    const MOVE_WINDOW_DOWN: Self = Self::new(&Modifier::CMD_OPTN_SHFT, Keycode::DownArrow);
 
-    const FOCUS_DISPLAY_0: Self = Self::new(&[Modifier::Command, Modifier::Option], Keycode::Ansi0);
-    const FOCUS_DISPLAY_1: Self = Self::new(&[Modifier::Command, Modifier::Option], Keycode::Ansi1);
-    const FOCUS_DISPLAY_2: Self = Self::new(&[Modifier::Command, Modifier::Option], Keycode::Ansi2);
-    const FOCUS_DISPLAY_3: Self = Self::new(&[Modifier::Command, Modifier::Option], Keycode::Ansi3);
-    const FOCUS_DISPLAY_4: Self = Self::new(&[Modifier::Command, Modifier::Option], Keycode::Ansi4);
-    const FOCUS_DISPLAY_5: Self = Self::new(&[Modifier::Command, Modifier::Option], Keycode::Ansi5);
-    const FOCUS_DISPLAY_6: Self = Self::new(&[Modifier::Command, Modifier::Option], Keycode::Ansi6);
-    const FOCUS_DISPLAY_7: Self = Self::new(&[Modifier::Command, Modifier::Option], Keycode::Ansi7);
-    const FOCUS_DISPLAY_8: Self = Self::new(&[Modifier::Command, Modifier::Option], Keycode::Ansi8);
-    const FOCUS_DISPLAY_9: Self = Self::new(&[Modifier::Command, Modifier::Option], Keycode::Ansi9);
+    const FOCUS_DISPLAY_0: Self = Self::new(&Modifier::CMD_OPTN, Keycode::Ansi0);
+    const FOCUS_DISPLAY_1: Self = Self::new(&Modifier::CMD_OPTN, Keycode::Ansi1);
+    const FOCUS_DISPLAY_2: Self = Self::new(&Modifier::CMD_OPTN, Keycode::Ansi2);
+    const FOCUS_DISPLAY_3: Self = Self::new(&Modifier::CMD_OPTN, Keycode::Ansi3);
+    const FOCUS_DISPLAY_4: Self = Self::new(&Modifier::CMD_OPTN, Keycode::Ansi4);
+    const FOCUS_DISPLAY_5: Self = Self::new(&Modifier::CMD_OPTN, Keycode::Ansi5);
+    const FOCUS_DISPLAY_6: Self = Self::new(&Modifier::CMD_OPTN, Keycode::Ansi6);
+    const FOCUS_DISPLAY_7: Self = Self::new(&Modifier::CMD_OPTN, Keycode::Ansi7);
+    const FOCUS_DISPLAY_8: Self = Self::new(&Modifier::CMD_OPTN, Keycode::Ansi8);
+    const FOCUS_DISPLAY_9: Self = Self::new(&Modifier::CMD_OPTN, Keycode::Ansi9);
 
-    const MOVE_TO_DISPLAY_0: Self = Self::new(
-        &[Modifier::Command, Modifier::Option, Modifier::Shift],
-        Keycode::Ansi0,
-    );
-    const MOVE_TO_DISPLAY_1: Self = Self::new(
-        &[Modifier::Command, Modifier::Option, Modifier::Shift],
-        Keycode::Ansi1,
-    );
-    const MOVE_TO_DISPLAY_2: Self = Self::new(
-        &[Modifier::Command, Modifier::Option, Modifier::Shift],
-        Keycode::Ansi2,
-    );
-    const MOVE_TO_DISPLAY_3: Self = Self::new(
-        &[Modifier::Command, Modifier::Option, Modifier::Shift],
-        Keycode::Ansi3,
-    );
-    const MOVE_TO_DISPLAY_4: Self = Self::new(
-        &[Modifier::Command, Modifier::Option, Modifier::Shift],
-        Keycode::Ansi4,
-    );
-    const MOVE_TO_DISPLAY_5: Self = Self::new(
-        &[Modifier::Command, Modifier::Option, Modifier::Shift],
-        Keycode::Ansi5,
-    );
-    const MOVE_TO_DISPLAY_6: Self = Self::new(
-        &[Modifier::Command, Modifier::Option, Modifier::Shift],
-        Keycode::Ansi6,
-    );
-    const MOVE_TO_DISPLAY_7: Self = Self::new(
-        &[Modifier::Command, Modifier::Option, Modifier::Shift],
-        Keycode::Ansi7,
-    );
-    const MOVE_TO_DISPLAY_8: Self = Self::new(
-        &[Modifier::Command, Modifier::Option, Modifier::Shift],
-        Keycode::Ansi8,
-    );
-    const MOVE_TO_DISPLAY_9: Self = Self::new(
-        &[Modifier::Command, Modifier::Option, Modifier::Shift],
-        Keycode::Ansi9,
-    );
+    const MOVE_TO_DISPLAY_0: Self = Self::new(&Modifier::CMD_OPTN_SHFT, Keycode::Ansi0);
+    const MOVE_TO_DISPLAY_1: Self = Self::new(&Modifier::CMD_OPTN_SHFT, Keycode::Ansi1);
+    const MOVE_TO_DISPLAY_2: Self = Self::new(&Modifier::CMD_OPTN_SHFT, Keycode::Ansi2);
+    const MOVE_TO_DISPLAY_3: Self = Self::new(&Modifier::CMD_OPTN_SHFT, Keycode::Ansi3);
+    const MOVE_TO_DISPLAY_4: Self = Self::new(&Modifier::CMD_OPTN_SHFT, Keycode::Ansi4);
+    const MOVE_TO_DISPLAY_5: Self = Self::new(&Modifier::CMD_OPTN_SHFT, Keycode::Ansi5);
+    const MOVE_TO_DISPLAY_6: Self = Self::new(&Modifier::CMD_OPTN_SHFT, Keycode::Ansi6);
+    const MOVE_TO_DISPLAY_7: Self = Self::new(&Modifier::CMD_OPTN_SHFT, Keycode::Ansi7);
+    const MOVE_TO_DISPLAY_8: Self = Self::new(&Modifier::CMD_OPTN_SHFT, Keycode::Ansi8);
+    const MOVE_TO_DISPLAY_9: Self = Self::new(&Modifier::CMD_OPTN_SHFT, Keycode::Ansi9);
 
-    const VERTICAL_SPLIT: Self = Self::new(&[Modifier::Command, Modifier::Option], Keycode::AnsiV);
-    const HORIZONTAL_SPLIT: Self =
-        Self::new(&[Modifier::Command, Modifier::Option], Keycode::AnsiH);
+    const VERTICAL_SPLIT: Self = Self::new(&Modifier::CMD_OPTN, Keycode::AnsiV);
+    const HORIZONTAL_SPLIT: Self = Self::new(&Modifier::CMD_OPTN, Keycode::AnsiH);
 }
 
 #[derive(Debug, Hash, PartialEq, Eq)]
@@ -243,7 +203,7 @@ impl KeyboardHandler {
         Ok(Self { event_tap })
     }
 
-    pub fn add_to_run_loop(&self, run_loop: CFRunLoopRef, mode: CFRunLoopMode) {
+    pub unsafe fn add_to_run_loop(&self, run_loop: CFRunLoopRef, mode: CFRunLoopMode) {
         unsafe {
             let source = CFMachPortCreateRunLoopSource(std::ptr::null_mut(), self.event_tap, 0);
             CFRunLoopAddSource(run_loop, source, mode);
@@ -262,7 +222,7 @@ extern "C" fn event_callback(
     }
 
     let flags = unsafe { CGEventGetFlags(event) };
-    let keycode_val = unsafe { CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode) };
+    let keycode_val = unsafe { CGEventGetIntegerValueField(event, KEYBOARD_EVENT_KEYCODE) };
     let keycode: Keycode = match keycode_val.try_into() {
         Ok(x) => x,
         Err(_) => return event,
