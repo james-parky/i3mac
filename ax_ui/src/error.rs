@@ -1,8 +1,5 @@
+use crate::{bits, bits::AxUiElementRef};
 use std::ffi::NulError;
-
-use crate::bits;
-use crate::bits::AxUiElementRef;
-use crate::observer::Observer;
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum Error {

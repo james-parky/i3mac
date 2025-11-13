@@ -1,4 +1,4 @@
-use core_foundation::{CFArrayRef, CFRunLoopSourceRef, CFStringRef, CFTypeRef};
+use core_foundation::{CFRunLoopSourceRef, CFStringRef, CFTypeRef};
 use std::ffi::{c_int, c_uint, c_void};
 
 pub type AxUiElementRef = *const c_void;
@@ -30,32 +30,24 @@ impl AXError {
 #[derive(Debug, Clone, Copy)]
 pub struct AXValueType(pub c_uint);
 
+// TODO: should unused constants only implemented to mimic the library be removed?
 impl AXValueType {
+    #[allow(dead_code)]
     pub const AX_ERROR: Self = Self(5);
+    #[allow(dead_code)]
     pub const CF_RANGE: Self = Self(4);
+    #[allow(dead_code)]
     pub const CG_POINT: Self = Self(1);
+    #[allow(dead_code)]
     pub const CG_RECT: Self = Self(3);
     pub const CG_SIZE: Self = Self(2);
+    #[allow(dead_code)]
     pub const ILLEGAL: Self = Self(0);
 }
 
 #[link(name = "ApplicationServices", kind = "framework")]
 unsafe extern "C" {
     pub fn AXUIElementCreateApplication(pid: libc::pid_t) -> AxUiElementRef;
-    // Documentation states this returns a AXError (int32_t) but it is better to
-    // return a c_int here and cast it to the above _custom_ AXError to make it
-    // easier to convert to Errors or Results.
-    pub fn AXUIElementCopyAttributeNames(element: AxUiElementRef, names: &mut CFArrayRef) -> c_int;
-    // Documentation states this returns a AXError (int32_t) but it is better to
-    // return a c_int here and cast it to the above _custom_ AXError to make it
-    // easier to convert to Errors or Results.
-    fn AXUIElementCopyActionNames(element: AxUiElementRef, names: &mut CFArrayRef) -> c_int;
-    fn AXUIElementIsAttributeSettable(
-        element: AxUiElementRef,
-        attribute: CFStringRef,
-        settable: *mut bool,
-    ) -> c_int;
-
     pub fn AXUIElementSetAttributeValue(
         element: AxUiElementRef,
         attribute: CFStringRef,
@@ -101,7 +93,6 @@ unsafe extern "C" {
     ) -> c_int;
 
     pub fn AXUIElementCreateSystemWide() -> AxUiElementRef;
-    pub fn AXUIElementGetPid(element: AxUiElementRef, pid: *const libc::pid_t) -> c_int;
 
     pub fn AXIsProcessTrusted() -> bool;
 }

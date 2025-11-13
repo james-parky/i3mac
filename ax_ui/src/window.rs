@@ -1,4 +1,3 @@
-use crate::bits::{AXUIElementCreateSystemWide, AXUIElementGetPid, AXUIElementPerformAction};
 use crate::{
     Error, Result,
     bits::{
@@ -6,13 +5,13 @@ use crate::{
         AXUIElementCreateApplication, AXUIElementSetAttributeValue, AXValueCreate, AXValueGetValue,
         AXValueRef, AXValueType, AxUiElementRef,
     },
+    bits::{AXUIElementCreateSystemWide, AXUIElementPerformAction},
 };
 use core_foundation::{
     CFArrayGetCount, CFArrayGetValueAtIndex, CFArrayRef, CFRelease, CFRetain,
     CFStringCreateWithCString, CFStringEncoding, CFStringRef, CFTypeRef, kCFBooleanTrue,
 };
 use core_graphics::{CGPoint, CGSize, WindowId};
-use libc::raise;
 use std::ffi::c_void;
 
 #[derive(Debug, Hash)]
@@ -135,9 +134,7 @@ impl Window {
         let ax_value =
             unsafe { AXValueCreate(AXValueType::CG_POINT, &point as *const _ as *const c_void) };
 
-        let result = unsafe {
-            AXUIElementSetAttributeValue(self.window_ref, pos_attr, ax_value as *const c_void)
-        };
+        let result = unsafe { AXUIElementSetAttributeValue(self.window_ref, pos_attr, ax_value) };
 
         unsafe { CFRelease(CFTypeRef(ax_value)) };
         unsafe { CFRelease(CFTypeRef(pos_attr)) };
@@ -154,9 +151,7 @@ impl Window {
         let ax_value =
             unsafe { AXValueCreate(AXValueType::CG_SIZE, &point as *const _ as *const c_void) };
 
-        let result = unsafe {
-            AXUIElementSetAttributeValue(self.window_ref, size_attr, ax_value as *const c_void)
-        };
+        let result = unsafe { AXUIElementSetAttributeValue(self.window_ref, size_attr, ax_value) };
 
         unsafe { CFRelease(CFTypeRef(ax_value)) };
         unsafe { CFRelease(CFTypeRef(size_attr)) };

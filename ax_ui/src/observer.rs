@@ -39,8 +39,10 @@ impl Observer {
         }
     }
 
+    // TODO: safety statement
+    #[allow(clippy::missing_safety_doc)]
     // TODO: event type with associated constants?
-    pub fn add_notification(
+    pub unsafe fn add_notification(
         &self,
         window_ref: AxUiElementRef,
         event: &str,
@@ -53,7 +55,13 @@ impl Observer {
         }
     }
 
-    pub fn remove_notification(&self, window_ref: AxUiElementRef, event: &str) -> Result<()> {
+    // TODO: safety statement
+    #[allow(clippy::missing_safety_doc)]
+    pub unsafe fn remove_notification(
+        &self,
+        window_ref: AxUiElementRef,
+        event: &str,
+    ) -> Result<()> {
         let event = cfstring(event)?;
 
         match AXError(unsafe { AXObserverRemoveNotification(self.ax_ref, window_ref, event) }) {
@@ -122,7 +130,9 @@ impl Callback {
         where
             F: FnMut(&D),
         {
-            let _ = Box::from_raw(ptr as *mut Context<D, F>);
+            unsafe {
+                let _ = Box::from_raw(ptr as *mut Context<D, F>);
+            }
         }
 
         Self {
