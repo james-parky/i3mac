@@ -8,7 +8,8 @@ use crate::{
     },
 };
 use core_foundation::{
-    CFMachPortCreateRunLoopSource, CFMachPortRef, CFRunLoopAddSource, CFRunLoopMode, CFRunLoopRef,
+    CFMachPortCreateRunLoopSource, CFMachPortRef, CFRelease, CFRunLoopAddSource, CFRunLoopMode,
+    CFRunLoopRef, CFTypeRef,
 };
 use std::{ffi::c_void, sync::mpsc::Sender};
 
@@ -175,6 +176,17 @@ pub enum KeyCommand {
 
 pub struct KeyboardHandler {
     event_tap: CFMachPortRef,
+    tx_ptr: *mut Sender<KeyCommand>,
+}
+
+impl Drop for KeyboardHandler {
+    fn drop(&mut self) {
+        unsafe {
+            CGEventTapEnable(self.event_tap, false);
+            CFRelease(CFTypeRef(self.event_tap));
+            let _ = Box::from_raw(self.tx_ptr);
+        }
+    }
 }
 
 impl KeyboardHandler {
@@ -195,18 +207,31 @@ impl KeyboardHandler {
         };
 
         if event_tap.is_null() {
+            unsafe {
+                let _ = Box::from_raw(tx_ptr);
+            }
             return Err(Error::FailedToCreateKeyboardEventTap);
         }
 
         unsafe { CGEventTapEnable(event_tap, true) };
 
-        Ok(Self { event_tap })
+        Ok(Self { event_tap, tx_ptr })
     }
 
-    pub unsafe fn add_to_run_loop(&self, run_loop: CFRunLoopRef, mode: CFRunLoopMode) {
+    pub unsafe fn add_to_run_loop(
+        &self,
+        run_loop: CFRunLoopRef,
+        mode: CFRunLoopMode,
+    ) -> Result<()> {
         unsafe {
             let source = CFMachPortCreateRunLoopSource(std::ptr::null_mut(), self.event_tap, 0);
+            if source.is_null() {
+                return Err(Error::FailedToCreateRunLoopSource);
+            }
+
             CFRunLoopAddSource(run_loop, source, mode);
+            CFRelease(CFTypeRef(source));
+            Ok(())
         }
     }
 }

@@ -39,7 +39,8 @@ fn main() {
     let (key_tx, key_rx) = channel::<KeyCommand>();
     let keyboard = KeyboardHandler::new(key_tx).expect("failed to create keyboard handler");
 
-    unsafe { keyboard.add_to_run_loop(CFRunLoopGetCurrent(), kCFRunLoopDefaultMode) };
+    unsafe { keyboard.add_to_run_loop(CFRunLoopGetCurrent(), kCFRunLoopDefaultMode) }
+        .expect("failed to add keyboard to run loop");
 
     let mut ctx = Context {
         displays: HashMap::new(),
@@ -255,43 +256,6 @@ fn handle_focus_shift(direction: Direction, displays: &HashMap<DisplayId, Displa
     Err(Error::WindowNotFound)
 }
 
-// fn move_window_to_display(
-//     display_id: u64, // TODO: type
-//     displays: &mut HashMap<DisplayId, Display>,
-// ) -> Result<()> {
-//     let focused_window = ax_ui::Window::get_focused().map_err(Error::AxUi)?;
-//     let mut removed_window: Option<Window> = None;
-//
-//     for (k, v) in displays.iter() {
-//         println!("display {k}: {v:?}\n\n\n");
-//     }
-//
-//     for display in displays.values_mut() {
-//         if let None = display.get_parent_of_window(focused_window) {
-//             // not in this display
-//             continue;
-//         }
-//
-//         if let Ok(Some(window)) = display.remove_window(focused_window) {
-//             removed_window = Some(window);
-//             // println!("removed window: {:?}", removed_window);
-//             break;
-//         }
-//     }
-//
-//     if removed_window.is_none() {
-//         return Err(Error::WindowNotFound);
-//     }
-//
-//     let cg_window = removed_window.as_ref().unwrap().cg().clone();
-//     drop(removed_window);
-//
-//     // TODO: error
-//     let mut target_display = displays
-//         .get_mut(&(display_id as usize).into())
-//         .ok_or(Error::DisplayNotFound)?;
-//     target_display.add_window(cg_window)
-// }
 fn move_window_to_display(
     display_id: u64,
     displays: &mut HashMap<DisplayId, Display>,

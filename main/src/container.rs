@@ -263,10 +263,6 @@ impl Container {
                             ..new_bounds
                         };
 
-                        // if let Self::Leaf { bounds, window } = child {
-                        //     *bounds = child_bounds;
-                        //     window.update_bounds(child_bounds)?;
-                        // }
                         child.update_bounds(child_bounds)?;
                     }
                 }
@@ -284,10 +280,7 @@ impl Container {
                             height: heights[i],
                             ..new_bounds
                         };
-                        // if let Self::Leaf { bounds, window } = child {
-                        //     *bounds = child_bounds;
-                        //     window.update_bounds(child_bounds)?;
-                        // }
+
                         child.update_bounds(child_bounds)?;
                     }
                 }

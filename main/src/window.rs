@@ -61,6 +61,21 @@ impl Window {
             .map_err(Error::AxUi)?;
         self.ax
             .resize(self.bounds.width, self.bounds.height)
+            .map_err(Error::AxUi)?;
+
+        self.lock_observer
+            .add_notification(
+                self.ax.window_ref(),
+                ax_ui::Window::RESIZED_ATTR,
+                self.lock_callback.ctx,
+            )
+            .map_err(Error::AxUi)?;
+        self.lock_observer
+            .add_notification(
+                self.ax.window_ref(),
+                ax_ui::Window::MOVED_ATTR,
+                self.lock_callback.ctx,
+            )
             .map_err(Error::AxUi)
     }
 
@@ -68,28 +83,15 @@ impl Window {
         let mut ax_window = ax_ui::Window::new(cg_window.owner_pid(), cg_window.number().into())
             .map_err(Error::AxUi)?;
 
-        let ax_window_ref = ax_window.window_ref();
-        let ax_clone = ax_window.clone();
-        let lock_callback = Window::lock_callback(ax_window, bounds);
+        let lock_callback = Window::lock_callback(ax_window.clone(), bounds);
         let observer =
             Observer::try_new(cg_window.owner_pid(), &lock_callback).map_err(Error::AxUi)?;
-
-        observer
-            .add_notification(
-                ax_window_ref,
-                ax_ui::Window::RESIZED_ATTR,
-                lock_callback.ctx,
-            )
-            .map_err(Error::AxUi)?;
-        observer
-            .add_notification(ax_window_ref, ax_ui::Window::MOVED_ATTR, lock_callback.ctx)
-            .map_err(Error::AxUi)?;
 
         observer.run();
 
         Ok(Self {
             cg: cg_window,
-            ax: ax_clone,
+            ax: ax_window,
             lock_observer: observer,
             lock_callback,
             bounds,
@@ -127,30 +129,21 @@ impl Window {
     }
 
     pub fn update_bounds(&mut self, new_bounds: Bounds) -> crate::Result<()> {
-        println!("updating bounds for {:?}", self.cg.number());
         self.bounds = new_bounds;
-        println!("set bounds");
 
         let _ = self
             .lock_observer
             .remove_notification(self.ax.window_ref(), "AXResized")
             .map_err(Error::AxUi);
 
-        println!("rem obsvs");
-
         let _ = self
             .lock_observer
             .remove_notification(self.ax.window_ref(), "AXMoved")
             .map_err(Error::AxUi);
 
-        println!("rem obsvs");
-
         let new_callback = Self::lock_callback(self.ax().clone(), new_bounds);
         let old_callback = std::mem::replace(&mut self.lock_callback, new_callback);
         drop(old_callback);
-        // self.lock_callback = new_callback;
-
-        println!("reset cb");
 
         self.lock_observer
             .add_notification(self.ax.window_ref(), "AXResized", self.lock_callback.ctx)
@@ -160,16 +153,12 @@ impl Window {
             .add_notification(self.ax.window_ref(), "AXMoved", self.lock_callback.ctx)
             .map_err(Error::AxUi)?;
 
-        println!("add notifs");
-
         self.ax
             .move_to(new_bounds.x, new_bounds.y)
             .map_err(Error::AxUi)?;
         self.ax
             .resize(new_bounds.width, new_bounds.height)
             .map_err(Error::AxUi)?;
-
-        println!("resize over");
 
         Ok(())
     }

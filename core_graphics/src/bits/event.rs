@@ -1,3 +1,4 @@
+use core_foundation::CFMachPortRef;
 use std::{
     ffi::{c_ulonglong, c_void},
     ops::Shl,
@@ -53,7 +54,6 @@ pub enum EventType {
 pub type CGEventMask = u64;
 pub type CGEventRef = *mut c_void;
 pub type CGEventTapProxy = *mut c_void;
-pub type CFMachPortRef = *mut c_void;
 
 #[repr(transparent)]
 pub struct EventFlags(c_ulonglong);

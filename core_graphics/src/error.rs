@@ -23,6 +23,7 @@ pub enum Error {
     CoreFoundation(core_foundation::Error),
     CouldNotFindDictionaryKey(String),
     FailedToCreateKeyboardEventTap,
+    FailedToCreateRunLoopSource,
 }
 
 impl From<bits::CGError> for Option<Error> {
