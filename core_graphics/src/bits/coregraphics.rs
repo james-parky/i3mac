@@ -210,7 +210,45 @@ unsafe extern "C" {
     /// display).
     pub fn CGDisplayBounds(display: CGDirectDisplayID) -> CGRect;
 
+    /// Returns the display ID of the main display.
+    ///
+    /// # Returns
+    ///
+    /// The display ID assigned to the main display.
+    ///
+    /// # Discussion
+    ///
+    /// The main display is the display with its screen location at (0,0) in the
+    /// global display coordinate space. In a system without display mirroring,
+    /// the display with the menu bar is typically the main display.
+    ///
+    /// If mirroring is enabled and the menu bar appears on more than one
+    /// display, this function provides a reliable way to find the main display.
+    ///
+    /// In case of hardware mirroring, the drawable display becomes the main
+    /// display. In case of software mirroring, the display with the highest
+    /// resolution and deepest pixel depth typically becomes the main display.
     pub fn CGMainDisplayID() -> CGDirectDisplayID;
 
+    /// Moves the mouse cursor without generating events.
+    ///
+    /// # Arguments
+    ///
+    /// * `new_cursor_position` - The new mouse cursor position in the global
+    ///   display coordinate space.
+    ///
+    /// # Returns
+    ///
+    /// A result code. To interpret the result code, see `CGError`.
+    ///
+    /// # Discussion
+    ///
+    /// You can use this function to "warp" or alter the cursor position without
+    /// generating or posting an event. For example, this function is often used
+    /// to move the cursor position back to the centre of the screen by games
+    /// that do not want the cursor pinned by display edges.
+    // Documentation states this returns a CGError (int32_t) but it is better to
+    // return a c_int here and cast it to the above _custom_ CGError to make it
+    // easier to convert to Errors or Results.
     pub fn CGWarpMouseCursorPosition(new_cursor_position: CGPoint) -> c_int;
 }
