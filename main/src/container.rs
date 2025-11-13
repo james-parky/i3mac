@@ -226,10 +226,9 @@ impl Container {
                             *self = Self::Empty {
                                 bounds: saved_bounds,
                             };
+                        } else {
+                            self.update_children_bounds(saved_bounds)?;
                         }
-                        // else {
-                        //     self.update_children_bounds(saved_bounds)?;
-                        // }
                         return Ok(true);
                     }
                 }
