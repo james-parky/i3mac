@@ -85,12 +85,14 @@ where
 pub struct Callback {
     pub func: AXObserverCallback,
     pub ctx: *mut c_void,
+    drop: unsafe fn(*mut c_void),
 }
 
 impl Drop for Callback {
     fn drop(&mut self) {
         unsafe {
-            let _ = Box::from_raw(self.ctx);
+            // let _ = Box::from_raw(self.ctx);
+            (self.drop)(self.ctx);
         }
     }
 }
@@ -116,9 +118,17 @@ impl Callback {
             (ctx.body)(&ctx.data);
         }
 
+        unsafe fn drop_context<D, F>(ptr: *mut c_void)
+        where
+            F: FnMut(&D),
+        {
+            let _ = Box::from_raw(ptr as *mut Context<D, F>);
+        }
+
         Self {
             func: callback::<D, F>,
             ctx: ctx_ptr as *mut c_void,
+            drop: drop_context::<D, F>,
         }
     }
 }

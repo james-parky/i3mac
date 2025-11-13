@@ -8,14 +8,14 @@ use crate::{
     },
 };
 use core_foundation::{
-    CFArrayGetCount, CFArrayGetValueAtIndex, CFArrayRef, CFRelease, CFStringCreateWithCString,
-    CFStringEncoding, CFStringRef, CFTypeRef, kCFBooleanTrue,
+    CFArrayGetCount, CFArrayGetValueAtIndex, CFArrayRef, CFRelease, CFRetain,
+    CFStringCreateWithCString, CFStringEncoding, CFStringRef, CFTypeRef, kCFBooleanTrue,
 };
 use core_graphics::{CGPoint, CGSize, WindowId};
 use libc::raise;
 use std::ffi::c_void;
 
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Hash)]
 pub struct Window {
     owner_pid: libc::pid_t,
     application_ref: AxUiElementRef,
@@ -27,6 +27,21 @@ impl Drop for Window {
         unsafe {
             CFRelease(CFTypeRef(self.application_ref));
             CFRelease(CFTypeRef(self.window_ref));
+        }
+    }
+}
+
+impl Clone for Window {
+    fn clone(&self) -> Self {
+        unsafe {
+            CFRetain(CFTypeRef(self.application_ref));
+            CFRetain(CFTypeRef(self.window_ref));
+        }
+
+        Self {
+            owner_pid: self.owner_pid,
+            application_ref: self.application_ref,
+            window_ref: self.window_ref,
         }
     }
 }
@@ -53,13 +68,23 @@ impl Window {
 
             let ax_window_number =
                 get_window_id(window_ref).ok_or(Error::CouldNotGetWindowNumber(window_ref))?;
+
             if ax_window_number == cg_window_number {
+                unsafe { CFRetain(CFTypeRef(window_ref)) };
+                unsafe {
+                    CFRelease(CFTypeRef(windows_array_ref));
+                }
+
                 return Ok(Self {
                     owner_pid,
                     application_ref,
                     window_ref,
                 });
             }
+        }
+
+        unsafe {
+            CFRelease(CFTypeRef(windows_array_ref));
         }
 
         Err(Error::CouldNotFindWindow(owner_pid))
@@ -72,6 +97,8 @@ impl Window {
         let result =
             unsafe { AXUIElementCopyAttributeValue(self.window_ref, attr_name, &mut value) };
 
+        unsafe { CFRelease(CFTypeRef(attr_name)) };
+
         if let Some(err) = AXError(result).into() {
             return Err(err);
         }
@@ -81,13 +108,17 @@ impl Window {
             height: 0.0,
         };
 
-        if !unsafe {
+        let success = unsafe {
             AXValueGetValue(
                 value as AXValueRef,
                 AXValueType::CG_SIZE,
                 &mut size as *mut _ as *mut c_void,
             )
-        } {
+        };
+
+        unsafe { CFRelease(CFTypeRef(value)) };
+
+        if !success {
             Err(Error::CouldNotGetWindowSize(self.application_ref))
         } else {
             Ok(size)
@@ -104,11 +135,14 @@ impl Window {
         let ax_value =
             unsafe { AXValueCreate(AXValueType::CG_POINT, &point as *const _ as *const c_void) };
 
-        match AXError(unsafe {
+        let result = unsafe {
             AXUIElementSetAttributeValue(self.window_ref, pos_attr, ax_value as *const c_void)
-        })
-        .into()
-        {
+        };
+
+        unsafe { CFRelease(CFTypeRef(ax_value)) };
+        unsafe { CFRelease(CFTypeRef(pos_attr)) };
+
+        match AXError(result).into() {
             Some(err) => Err(err),
             None => Ok(()),
         }
@@ -120,11 +154,14 @@ impl Window {
         let ax_value =
             unsafe { AXValueCreate(AXValueType::CG_SIZE, &point as *const _ as *const c_void) };
 
-        match AXError(unsafe {
+        let result = unsafe {
             AXUIElementSetAttributeValue(self.window_ref, size_attr, ax_value as *const c_void)
-        })
-        .into()
-        {
+        };
+
+        unsafe { CFRelease(CFTypeRef(ax_value)) };
+        unsafe { CFRelease(CFTypeRef(size_attr)) };
+
+        match AXError(result).into() {
             Some(err) => Err(err),
             None => Ok(()),
         }
@@ -134,37 +171,36 @@ impl Window {
         let raise_attr = cfstring("AXRaise")?;
         let result = unsafe { AXUIElementPerformAction(self.window_ref, raise_attr) };
 
+        unsafe { CFRelease(CFTypeRef(raise_attr)) };
+
         if result != 0 {
             return Err(Error::CouldNotFocusWindow(self.window_ref));
         }
 
         let attr_name = cfstring("AXMain")?;
-        unsafe {
-            let result = AXUIElementSetAttributeValue(self.window_ref, attr_name, kCFBooleanTrue);
-
-            if result != 0 {
-                return Err(Error::CouldNotFocusWindow(self.window_ref));
-            }
+        let result =
+            unsafe { AXUIElementSetAttributeValue(self.window_ref, attr_name, kCFBooleanTrue) };
+        unsafe { CFRelease(CFTypeRef(attr_name)) };
+        if result != 0 {
+            return Err(Error::CouldNotFocusWindow(self.window_ref));
         }
 
         // Also try to focus it
         let focused_attr = cfstring("AXFocused")?;
         let result =
             unsafe { AXUIElementSetAttributeValue(self.window_ref, focused_attr, kCFBooleanTrue) };
-
+        unsafe { CFRelease(CFTypeRef(focused_attr)) };
         if result != 0 {
             return Err(Error::CouldNotFocusWindow(self.window_ref));
         }
 
-        unsafe {
-            let result = AXUIElementSetAttributeValue(
-                self.application_ref,
-                cfstring("AXFrontmost")?,
-                kCFBooleanTrue,
-            );
-            if result != 0 {
-                return Err(Error::CouldNotFocusWindow(self.window_ref));
-            }
+        let frontmost_attr = cfstring("AXFrontmost")?;
+        let result = unsafe {
+            AXUIElementSetAttributeValue(self.application_ref, frontmost_attr, kCFBooleanTrue)
+        };
+        unsafe { CFRelease(CFTypeRef(frontmost_attr)) };
+        if result != 0 {
+            return Err(Error::CouldNotFocusWindow(self.window_ref));
         }
 
         Ok(())
@@ -172,12 +208,14 @@ impl Window {
 
     pub fn get_focused() -> Result<WindowId> {
         let system_wide = unsafe { AXUIElementCreateSystemWide() };
-        let focussed_attr = cfstring("AXFocusedUIElement")?;
+        let focused_attr = cfstring("AXFocusedUIElement")?;
 
         let mut focused_element: *const c_void = std::ptr::null();
         let result = unsafe {
-            AXUIElementCopyAttributeValue(system_wide, focussed_attr, &mut focused_element)
+            AXUIElementCopyAttributeValue(system_wide, focused_attr, &mut focused_element)
         };
+        unsafe { CFRelease(CFTypeRef(focused_attr)) };
+        unsafe { CFRelease(CFTypeRef(system_wide)) };
 
         // TODO: handle properly
         if result != 0 {
@@ -186,6 +224,9 @@ impl Window {
         }
 
         let window_result = get_window_id(focused_element);
+
+        unsafe { CFRelease(CFTypeRef(focused_element)) };
+
         match window_result {
             Some(window) => Ok(window),
             None => Err(Error::CouldNotGetWindowNumber(focused_element)),
@@ -209,11 +250,12 @@ fn get_window_ref_array(application_ref: AxUiElementRef) -> Result<CFArrayRef> {
     let windows_attr = cfstring(Window::WINDOWS_ATTR)?;
     let mut value: *const c_void = std::ptr::null();
 
-    match AXError(unsafe {
-        AXUIElementCopyAttributeValue(application_ref, windows_attr, &mut value)
-    })
-    .into()
-    {
+    let result =
+        unsafe { AXUIElementCopyAttributeValue(application_ref, windows_attr, &mut value) };
+
+    unsafe { CFRelease(CFTypeRef(windows_attr)) };
+
+    match AXError(result).into() {
         Some(e) => Err(e),
         None => Ok(value as CFArrayRef),
     }

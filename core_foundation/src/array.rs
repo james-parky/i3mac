@@ -1,5 +1,6 @@
 use crate::{
-    CFArrayGetCount, CFArrayGetValueAtIndex, CFArrayRef, CFIndex, CFTypeRef, Error, Result,
+    CFArrayGetCount, CFArrayGetValueAtIndex, CFArrayRef, CFIndex, CFRelease, CFRetain, CFTypeRef,
+    Error, Result,
 };
 
 #[derive(Debug)]
@@ -33,6 +34,8 @@ where
                 T::try_from(CFTypeRef(type_ref))
             })
             .collect::<Result<Vec<T>>>()?;
+
+        unsafe { CFRelease(CFTypeRef(array)) };
 
         Ok(Array(vec))
     }

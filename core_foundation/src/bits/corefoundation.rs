@@ -156,6 +156,7 @@ unsafe extern "C" {
         return_after_source_handled: bool,
     );
     pub fn CFRelease(value: CFTypeRef);
+    pub fn CFRetain(value: CFTypeRef);
     /// Returns the number of values currently in an array.
     ///
     /// # Arguments
@@ -521,36 +522,6 @@ impl TryFrom<&str> for CFTypeRef {
             Err(Error::NulString)
         } else {
             Ok(CFTypeRef(string_ref))
-        }
-    }
-}
-
-impl TryFrom<CFTypeRef> for &str {
-    type Error = Error;
-    fn try_from(value: CFTypeRef) -> Result<Self> {
-        if value.0.is_null() {
-            return Err(Error::NulString);
-        }
-
-        let len: CFIndex = unsafe { CFStringGetLength(value.0 as CFStringRef) };
-        let max_size = unsafe { CFStringGetMaximumSizeForEncoding(len, CFStringEncoding::Utf8) };
-
-        let mut buffer = vec![0u8; max_size as usize];
-        let success = unsafe {
-            CFStringGetCString(
-                value.0 as CFStringRef,
-                buffer.as_mut_ptr().cast(),
-                max_size,
-                CFStringEncoding::Utf8,
-            )
-        };
-
-        if success {
-            let cstr = unsafe { CStr::from_ptr(buffer.as_ptr().cast()) };
-            cstr.to_str().map_err(Error::InvalidCString)
-        } else {
-            // TODO: specific error type
-            Err(Error::NulString)
         }
     }
 }
