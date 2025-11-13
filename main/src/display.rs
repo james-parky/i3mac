@@ -127,7 +127,7 @@ impl Display {
 
     pub fn focus_window(&self, window_id: WindowId) -> Result<()> {
         if let Some(window) = self.root.find_window(window_id) {
-            window.ax().focus().map_err(Error::AxUi)
+            window.ax().try_focus().map_err(Error::AxUi)
         } else {
             Err(Error::WindowNotFound)
         }

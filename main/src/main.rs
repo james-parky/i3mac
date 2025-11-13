@@ -51,7 +51,7 @@ fn main() {
     loop {
         unsafe { CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.1, false) }
 
-        if let Ok(focused_window_id) = ax_ui::Window::get_focused() {
+        if let Ok(focused_window_id) = ax_ui::Window::try_get_focused() {
             for display in ctx.displays.values_mut() {
                 if display.window_ids().contains(&focused_window_id) {
                     display.set_focused_window(focused_window_id);
@@ -180,7 +180,7 @@ fn handle_key_command(command: KeyCommand, ctx: &mut Context) {
             handle_split(&mut ctx.displays, container::Direction::Horizontal);
         }
         KeyCommand::ResizeWindow(direction) => {
-            if let Ok(focused_window) = ax_ui::Window::get_focused() {
+            if let Ok(focused_window) = ax_ui::Window::try_get_focused() {
                 for display in ctx.displays.values_mut() {
                     if display.window_ids().contains(&focused_window) {
                         match display.resize_focused(focused_window, &direction) {
@@ -195,7 +195,7 @@ fn handle_key_command(command: KeyCommand, ctx: &mut Context) {
 }
 
 fn handle_split(displays: &mut HashMap<DisplayId, Display>, direction: container::Direction) {
-    if let Ok(window_id) = ax_ui::Window::get_focused() {
+    if let Ok(window_id) = ax_ui::Window::try_get_focused() {
         for display in displays.values_mut() {
             if let Some(parent) = display.get_leaf_of_window_mut(window_id) {
                 match parent.split(direction) {
@@ -220,7 +220,7 @@ fn open_terminal() {
 }
 
 fn handle_focus_shift(direction: Direction, displays: &HashMap<DisplayId, Display>) -> Result<()> {
-    let current_window_id = ax_ui::Window::get_focused().map_err(Error::AxUi)?;
+    let current_window_id = ax_ui::Window::try_get_focused().map_err(Error::AxUi)?;
 
     // Find which display has the focused window
     for (display_id, display) in displays.iter() {
@@ -260,7 +260,7 @@ fn move_window_to_display(
     display_id: u64,
     displays: &mut HashMap<DisplayId, Display>,
 ) -> Result<()> {
-    let focused_window = ax_ui::Window::get_focused().map_err(Error::AxUi)?;
+    let focused_window = ax_ui::Window::try_get_focused().map_err(Error::AxUi)?;
     println!("Trying to move window: {:?}", focused_window);
 
     // Find the CG window info before removing

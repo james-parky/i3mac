@@ -4,7 +4,7 @@ use crate::{
         AXError, AXObserverAddNotification, AXObserverCallback, AXObserverCreate,
         AXObserverGetRunLoopSource, AXObserverRef, AXObserverRemoveNotification, AxUiElementRef,
     },
-    window::cfstring,
+    try_create_cf_string,
 };
 use core_foundation::{
     CFRelease, CFRunLoopAddSource, CFRunLoopGetCurrent, CFRunLoopRemoveSource, CFStringRef,
@@ -48,7 +48,7 @@ impl Observer {
         event: &str,
         ctx: *mut c_void,
     ) -> Result<()> {
-        let event = cfstring(event)?;
+        let event = unsafe { try_create_cf_string(event) }?;
         match AXError(unsafe { AXObserverAddNotification(self.ax_ref, window_ref, event, ctx) }) {
             AXError::SUCCESS => Ok(()),
             err => Err(Error::CouldNotAttachNotification(window_ref, err)),
@@ -62,7 +62,7 @@ impl Observer {
         window_ref: AxUiElementRef,
         event: &str,
     ) -> Result<()> {
-        let event = cfstring(event)?;
+        let event = unsafe { try_create_cf_string(event) }?;
 
         match AXError(unsafe { AXObserverRemoveNotification(self.ax_ref, window_ref, event) }) {
             AXError::SUCCESS => Ok(()),

@@ -60,10 +60,10 @@ impl Window {
 
     pub(crate) fn init(&mut self) -> crate::Result<()> {
         self.ax
-            .move_to(self.bounds.x, self.bounds.y)
+            .try_move_to(self.bounds.x, self.bounds.y)
             .map_err(Error::AxUi)?;
         self.ax
-            .resize(self.bounds.width, self.bounds.height)
+            .try_resize(self.bounds.width, self.bounds.height)
             .map_err(Error::AxUi)?;
 
         unsafe {
@@ -112,8 +112,8 @@ impl Window {
 
         Callback::new(context, |ctx| {
             // TODO: logging
-            let _ = ctx.window.resize(ctx.size.width, ctx.size.height);
-            let _ = ctx.window.move_to(ctx.point.x, ctx.point.y);
+            let _ = ctx.window.try_resize(ctx.size.width, ctx.size.height);
+            let _ = ctx.window.try_move_to(ctx.point.x, ctx.point.y);
         })
     }
 
@@ -124,10 +124,10 @@ impl Window {
         self.lock_callback = Self::lock_callback(self.ax().clone(), new_bounds);
 
         self.ax
-            .move_to(new_bounds.x, new_bounds.y)
+            .try_move_to(new_bounds.x, new_bounds.y)
             .map_err(Error::AxUi)?;
         self.ax
-            .resize(new_bounds.width, new_bounds.height)
+            .try_resize(new_bounds.width, new_bounds.height)
             .map_err(Error::AxUi)?;
 
         Ok(())
@@ -163,10 +163,10 @@ impl Window {
         }
 
         self.ax
-            .move_to(new_bounds.x, new_bounds.y)
+            .try_move_to(new_bounds.x, new_bounds.y)
             .map_err(Error::AxUi)?;
         self.ax
-            .resize(new_bounds.width, new_bounds.height)
+            .try_resize(new_bounds.width, new_bounds.height)
             .map_err(Error::AxUi)?;
 
         Ok(())

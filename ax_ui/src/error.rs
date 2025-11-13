@@ -28,11 +28,13 @@ pub enum Error {
     CouldNotCreateObserver(libc::pid_t, bits::AXError),
     CouldNotAttachNotification(AxUiElementRef, bits::AXError),
     CouldNotRemoveNotification(AxUiElementRef, bits::AXError),
-    CouldNotGetWindowNumber(AxUiElementRef),
+    CouldNotGetWindowId,
     CouldNotGetWindowSize(AxUiElementRef),
     CouldNotGetFocusedWindow,
     CouldNotFocusWindow(AxUiElementRef),
     CouldNotGetPid,
+    WindowRefIsNull,
+    CouldNotExtractValue,
 }
 
 impl From<bits::AXError> for Option<Error> {
