@@ -2,6 +2,8 @@ mod container;
 mod display;
 mod error;
 mod event_loop;
+mod status_bar;
+mod sys_info;
 mod window;
 mod window_manager;
 

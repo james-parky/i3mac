@@ -1,7 +1,4 @@
-mod sys_info;
-
-use crate::sys_info::{get_ipv4_address, get_ipv6_address};
-use core_graphics::{Bounds, DisplayId};
+use core_graphics::Bounds;
 use std::ffi::CString;
 use std::os::raw::{c_char, c_void};
 use std::ptr;
@@ -45,11 +42,7 @@ unsafe fn sel(name: &str) -> *mut c_void {
     sel_registerName(sname.as_ptr())
 }
 
-pub struct StatusBar {
-    window: Window,
-}
-
-struct Application {
+pub struct Application {
     application: *mut c_void,
 }
 
@@ -62,7 +55,7 @@ impl Application {
     }
 }
 
-struct Window {
+pub struct Window {
     window: *mut c_void,
 }
 
@@ -117,7 +110,7 @@ impl Window {
     }
 }
 
-enum Colour {
+pub enum Colour {
     White,
     Black,
     Red,
@@ -139,64 +132,11 @@ impl Colour {
     }
 }
 
-impl StatusBar {
-    pub fn new(display_id: DisplayId, bounds: Bounds) -> Self {
-        unsafe {
-            let _application = Application::new();
-
-            let main_display_bounds = core_graphics::Display::main_display_bounds();
-            let window_bottom_left = main_display_bounds.height - (bounds.y + bounds.height) - 25.0;
-            let window_bounds = Bounds {
-                x: bounds.x,
-                y: window_bottom_left,
-                height: 25.0,
-                width: bounds.width,
-            };
-            let mut window = Window::new(window_bounds);
-
-            println!("window bounds: {:?}", window_bounds);
-
-            window.set_background_colour(Colour::Black);
-
-            let ipv4_label_bounds = Bounds {
-                x: bounds.width - 100.0,
-                y: 0.0,
-                height: 25.0,
-                width: 100.0,
-            };
-
-            let ipv6_label_bounds = Bounds {
-                x: bounds.width - 150.0,
-                y: 0.0,
-                height: 25.0,
-                width: 50.0,
-            };
-
-            let display_id_bounds = Bounds {
-                x: 0.0,
-                y: 0.0,
-                height: 25.0,
-                width: 20.0,
-            };
-
-            window.add_element_to_content_view(Label::ipv4(ipv4_label_bounds));
-            window.add_element_to_content_view(Label::ipv6(ipv6_label_bounds));
-            window.add_element_to_content_view(Label::id(display_id, display_id_bounds));
-
-            Self { window }
-        }
-    }
-
-    pub fn display(&self) {
-        self.window.display();
-    }
-}
-
 pub trait NsElement {
     fn as_element(&self) -> *mut c_void;
 }
 
-struct Label {
+pub struct Label {
     label: *mut c_void,
 }
 
@@ -233,43 +173,5 @@ impl Label {
 
             Self { label }
         }
-    }
-
-    pub fn ipv4(bounds: Bounds) -> Self {
-        let ipv4_addr = get_ipv4_address();
-        let ipv4_addr_colour = if let Some(_) = ipv4_addr {
-            Colour::Green
-        } else {
-            Colour::Red
-        };
-
-        unsafe {
-            Label::new(
-                bounds,
-                ipv4_addr.unwrap_or("W: down".to_string()),
-                ipv4_addr_colour,
-            )
-        }
-    }
-
-    pub fn ipv6(bounds: Bounds) -> Self {
-        let ipv6_addr = get_ipv6_address();
-        let ipv6_addr_colour = if let Some(_) = ipv6_addr {
-            Colour::Green
-        } else {
-            Colour::Red
-        };
-
-        unsafe {
-            Label::new(
-                bounds,
-                ipv6_addr.unwrap_or("no IPv6".to_string()),
-                ipv6_addr_colour,
-            )
-        }
-    }
-
-    pub fn id(display_id: DisplayId, bounds: Bounds) -> Self {
-        unsafe { Label::new(bounds, display_id.to_string(), Colour::White) }
     }
 }

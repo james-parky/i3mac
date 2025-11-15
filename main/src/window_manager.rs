@@ -3,9 +3,9 @@ use crate::{
     display::Display,
     error::{Error, Result},
     event_loop::Event,
+    status_bar::StatusBar,
 };
 use core_graphics::{Direction, DisplayId, KeyCommand, WindowId};
-use foundation::StatusBar;
 use std::collections::HashMap;
 
 pub(super) struct WindowManager {
