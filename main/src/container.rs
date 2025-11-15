@@ -1,4 +1,7 @@
-use crate::{Error, window::Window};
+use crate::{
+    error::{Error, Result},
+    window::Window,
+};
 use core_graphics::{Bounds, WindowId};
 use std::{cell::RefCell, collections::HashSet, rc::Rc};
 
@@ -67,7 +70,7 @@ impl Container {
             Self::Split { children, .. } => children.first().and_then(|c| c.get_first_window()),
         }
     }
-    pub fn add_window(&mut self, cg_window: core_graphics::Window) -> crate::Result<()> {
+    pub fn add_window(&mut self, cg_window: core_graphics::Window) -> Result<()> {
         match self {
             Self::Leaf { .. } => return Err(Error::CannotAddWindowToLeaf),
             Self::Empty { bounds } => {
@@ -196,7 +199,7 @@ impl Container {
         }
     }
 
-    pub(super) fn remove_window(&mut self, window_id: WindowId) -> crate::Result<bool> {
+    pub(super) fn remove_window(&mut self, window_id: WindowId) -> Result<bool> {
         match self {
             Self::Empty { .. } => Ok(false),
             Self::Leaf { window, .. } if window.cg().number() == window_id => Ok(true),
@@ -238,7 +241,7 @@ impl Container {
         }
     }
 
-    fn update_children_bounds(&mut self, new_bounds: Bounds) -> crate::Result<()> {
+    fn update_children_bounds(&mut self, new_bounds: Bounds) -> Result<()> {
         if let Self::Split {
             children,
             direction,
@@ -293,7 +296,7 @@ impl Container {
             children.retain(|child| !matches!(child, Self::Empty { .. }));
         }
     }
-    pub(super) fn split(&mut self, direction: Direction) -> crate::Result<()> {
+    pub(super) fn split(&mut self, direction: Direction) -> Result<()> {
         match self {
             Self::Empty { .. } => Err(Error::CannotSplitEmptyContainer),
             Self::Leaf { bounds, .. } => {
@@ -320,7 +323,7 @@ impl Container {
         }
     }
 
-    fn disable_all_observers(&mut self) -> crate::Result<()> {
+    fn disable_all_observers(&mut self) -> Result<()> {
         match self {
             Self::Empty { .. } => Ok(()),
             Self::Leaf { window, .. } => window.disable_observers(),
@@ -333,7 +336,7 @@ impl Container {
         }
     }
 
-    fn enable_all_observers(&mut self) -> crate::Result<()> {
+    fn enable_all_observers(&mut self) -> Result<()> {
         match self {
             Self::Empty { .. } => Ok(()),
             Self::Leaf { window, .. } => window.enable_observers(),
@@ -346,7 +349,7 @@ impl Container {
         }
     }
 
-    fn recalculate_layout(&mut self, new_bounds: Bounds) -> crate::Result<()> {
+    fn recalculate_layout(&mut self, new_bounds: Bounds) -> Result<()> {
         println!("recalculating layout...for {:?}", self);
         match self {
             Self::Empty { .. } => Ok(()),
@@ -437,7 +440,7 @@ impl Container {
         }
     }
 
-    fn recalculate_layout_inner(&mut self, new_bounds: Bounds) -> crate::Result<()> {
+    fn recalculate_layout_inner(&mut self, new_bounds: Bounds) -> Result<()> {
         match self {
             Self::Empty { .. } => Ok(()),
             Self::Leaf { bounds, window, .. } => {
@@ -535,7 +538,7 @@ impl Container {
         None
     }
 
-    fn update_bounds(&mut self, new_bounds: Bounds) -> crate::Result<()> {
+    fn update_bounds(&mut self, new_bounds: Bounds) -> Result<()> {
         match self {
             Self::Empty { bounds } => {
                 *bounds = new_bounds;
@@ -565,7 +568,7 @@ impl Container {
         direction: &core_graphics::Direction,
         amount: f64,
         container_bounds: Bounds,
-    ) -> crate::Result<()> {
+    ) -> Result<()> {
         match self {
             Self::Empty { .. } => Err(Error::WindowNotFound),
             Self::Leaf { window, .. } if window.cg().number() == window_id => {
@@ -619,7 +622,7 @@ impl Container {
         direction: &core_graphics::Direction,
         amount: f64,
         parent_bounds: Bounds,
-    ) -> crate::Result<()> {
+    ) -> Result<()> {
         if let Self::Split {
             children,
             direction: split_dir,
@@ -652,7 +655,7 @@ impl Container {
         direction: &core_graphics::Direction,
         amount: f64,
         parent_bounds: Bounds,
-    ) -> crate::Result<()> {
+    ) -> Result<()> {
         if let Self::Split {
             children,
             direction: split_dir,

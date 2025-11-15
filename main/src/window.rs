@@ -1,4 +1,4 @@
-use crate::Error;
+use crate::{error::Error, error::Result};
 use ax_ui::{Callback, Observer};
 use core_graphics::{Bounds, CGPoint, CGSize};
 use std::{hash::Hash, rc::Rc};
@@ -25,7 +25,7 @@ impl PartialEq for Window {
 }
 
 impl Window {
-    pub fn disable_observers(&mut self) -> crate::Result<()> {
+    pub fn disable_observers(&mut self) -> Result<()> {
         unsafe {
             let _ = self
                 .lock_observer
@@ -39,7 +39,7 @@ impl Window {
         Ok(())
     }
 
-    pub fn enable_observers(&mut self) -> crate::Result<()> {
+    pub fn enable_observers(&mut self) -> Result<()> {
         unsafe {
             self.lock_observer
                 .add_notification(self.ax.window_ref(), "AXResized", self.lock_callback.ctx)
@@ -58,7 +58,7 @@ impl Window {
         &self.cg
     }
 
-    pub(crate) fn init(&mut self) -> crate::Result<()> {
+    pub(crate) fn init(&mut self) -> Result<()> {
         self.ax
             .try_move_to(self.bounds.x, self.bounds.y)
             .map_err(Error::AxUi)?;
@@ -84,7 +84,7 @@ impl Window {
         }
     }
 
-    pub(crate) fn try_new(cg_window: core_graphics::Window, bounds: Bounds) -> crate::Result<Self> {
+    pub(crate) fn try_new(cg_window: core_graphics::Window, bounds: Bounds) -> Result<Self> {
         let mut ax_window = ax_ui::Window::new(cg_window.owner_pid(), cg_window.number().into())
             .map_err(Error::AxUi)?;
 
@@ -117,7 +117,7 @@ impl Window {
         })
     }
 
-    pub fn update_bounds_no_observer_update(&mut self, new_bounds: Bounds) -> crate::Result<()> {
+    pub fn update_bounds_no_observer_update(&mut self, new_bounds: Bounds) -> Result<()> {
         self.bounds = new_bounds;
 
         // Just update the callback context, don't touch observers
@@ -133,7 +133,7 @@ impl Window {
         Ok(())
     }
 
-    pub fn update_bounds(&mut self, new_bounds: Bounds) -> crate::Result<()> {
+    pub fn update_bounds(&mut self, new_bounds: Bounds) -> Result<()> {
         self.bounds = new_bounds;
 
         unsafe {
