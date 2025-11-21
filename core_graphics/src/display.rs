@@ -16,6 +16,10 @@ impl Display {
         unsafe { CGDisplayBounds(CGMainDisplayID()).into() }
     }
 
+    pub fn main_display() -> DisplayId {
+        unsafe { CGMainDisplayID() }.into()
+    }
+
     pub fn window_ids(&self) -> HashSet<WindowId> {
         self.windows.iter().map(|window| window.number()).collect()
     }

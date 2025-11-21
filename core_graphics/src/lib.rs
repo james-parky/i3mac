@@ -19,6 +19,11 @@ use std::hash::{Hash, Hasher};
 #[allow(dead_code)]
 pub struct DisplayId(u32);
 
+impl From<DisplayId> for usize {
+    fn from(id: DisplayId) -> Self {
+        id.0 as usize
+    }
+}
 impl From<CGDirectDisplayID> for DisplayId {
     fn from(id: CGDirectDisplayID) -> Self {
         DisplayId(id)
@@ -52,6 +57,17 @@ pub struct Bounds {
     pub y: f64,
 }
 
+impl Default for Bounds {
+    fn default() -> Self {
+        Self {
+            height: 0.0,
+            width: 0.0,
+            x: 0.0,
+            y: 0.0,
+        }
+    }
+}
+
 impl PartialEq for Bounds {
     fn eq(&self, other: &Self) -> bool {
         self.x.to_bits() == other.x.to_bits()
@@ -73,6 +89,60 @@ impl Hash for Bounds {
 }
 
 impl Bounds {
+    pub fn grow(self, direction: Direction, amount: f64) -> Self {
+        match direction {
+            Direction::Left => Self {
+                x: self.x - amount,
+                width: self.width + amount,
+                ..self
+            },
+            Direction::Right => Self {
+                width: self.width + amount,
+                ..self
+            },
+            Direction::Up => Self {
+                y: self.y - amount,
+                height: self.height + amount,
+                ..self
+            },
+            Direction::Down => Self {
+                height: self.height + amount,
+                ..self
+            },
+        }
+    }
+
+    pub fn shrink(self, direction: Direction, amount: f64) -> Self {
+        match direction {
+            Direction::Left => Self {
+                x: self.x + amount,
+                width: self.width - amount,
+                ..self
+            },
+            Direction::Right => Self {
+                // x: self.x + amount,
+                width: self.width - amount,
+                ..self
+            },
+            Direction::Up => Self {
+                y: self.y + amount,
+                height: self.height - amount,
+                ..self
+            },
+            Direction::Down => Self {
+                height: self.height - amount,
+                ..self
+            },
+        }
+    }
+
+    pub fn can_shrink(&self, direction: Direction, amount: f64, min: f64) -> bool {
+        match direction {
+            Direction::Left | Direction::Right => self.width - amount >= min,
+            Direction::Up | Direction::Down => self.height - amount >= min,
+        }
+    }
+
     pub fn with_pad(&self, pad: f64) -> Self {
         Self {
             height: self.height - (2.0 * pad),

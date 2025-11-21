@@ -25,6 +25,10 @@ impl PartialEq for Window {
 }
 
 impl Window {
+    pub fn bounds(&self) -> &Bounds {
+        &self.bounds
+    }
+
     pub fn disable_observers(&mut self) -> Result<()> {
         unsafe {
             let _ = self
@@ -85,8 +89,10 @@ impl Window {
     }
 
     pub(crate) fn try_new(cg_window: core_graphics::Window, bounds: Bounds) -> Result<Self> {
-        let mut ax_window = ax_ui::Window::new(cg_window.owner_pid(), cg_window.number().into())
-            .map_err(Error::AxUi)?;
+        let ax_window =
+            ax_ui::Window::new(cg_window.owner_pid(), cg_window.number()).map_err(Error::AxUi)?;
+        ax_window.unminimise().map_err(Error::AxUi)?;
+        ax_window.try_focus().map_err(Error::AxUi)?;
 
         let lock_callback = Window::lock_callback(ax_window.clone(), bounds);
         let observer =

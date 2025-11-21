@@ -209,6 +209,22 @@ impl Window {
             }
         }
     }
+
+    pub fn close(&self) -> Result<()> {
+        try_perform_action(self.window_ref, "AXClose")
+    }
+
+    pub fn minimise(&self) -> Result<()> {
+        try_set_attr(self.window_ref, "AXMinimized", true)
+    }
+
+    pub fn unminimise(&self) -> Result<()> {
+        try_set_attr(self.window_ref, "AXMinimized", false)
+    }
+
+    pub fn is_minimised(&self) -> Result<bool> {
+        try_get_attr(self.window_ref, "AXMinimized")
+    }
 }
 
 enum Value {

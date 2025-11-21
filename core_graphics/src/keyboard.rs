@@ -153,7 +153,7 @@ impl TryFrom<i64> for Keycode {
     }
 }
 
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 pub enum Direction {
     Left,
     Right,
@@ -166,7 +166,7 @@ pub enum KeyCommand {
     NewTerminal,
     CloseWindow,
     Focus(Direction),
-    FocusDisplay(u64),
+    FocusDisplay(usize),
     MoveWindowToDisplay(u64),
     ToggleVerticalSplit,
     ToggleHorizontalSplit,

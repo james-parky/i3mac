@@ -108,6 +108,10 @@ impl Window {
             msg_send!(self.window, sel("orderFrontRegardless"));
         }
     }
+
+    pub unsafe fn close(&mut self) {
+        msg_send!(self.window, sel("close"));
+    }
 }
 
 pub enum Colour {
@@ -115,6 +119,7 @@ pub enum Colour {
     Black,
     Red,
     Green,
+    Blue,
 }
 
 impl Colour {
@@ -126,6 +131,7 @@ impl Colour {
             Colour::Black => "blackColor",
             Colour::Red => "redColor",
             Colour::Green => "greenColor",
+            Colour::Blue => "blueColor",
         };
 
         msg_send!(colour_class, sel(string))

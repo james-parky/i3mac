@@ -2,6 +2,7 @@ use core_foundation::{
     CFRunLoopSourceRef, CFStringRef, CFTypeRef, Error, kCFBooleanFalse, kCFBooleanTrue,
 };
 use core_graphics::CGSize;
+use std::cmp::PartialEq;
 use std::ffi::{c_int, c_uint, c_void};
 
 pub type AxUiElementRef = *const c_void;
@@ -109,7 +110,7 @@ pub type AXObserverCallback = extern "C" fn(
     ref_con: *mut c_void,
 );
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 #[repr(transparent)]
 pub struct AXValueRef(pub *const c_void);
 
@@ -132,6 +133,19 @@ impl TryFrom<AXValueRef> for CGSize {
 
         if success {
             Ok(size)
+        } else {
+            Err(Self::Error::CouldNotExtractValue)
+        }
+    }
+}
+
+impl TryFrom<AXValueRef> for bool {
+    type Error = crate::Error;
+    fn try_from(ax_value: AXValueRef) -> Result<Self, Self::Error> {
+        if ax_value.0 == unsafe { kCFBooleanTrue } {
+            Ok(true)
+        } else if ax_value.0 == unsafe { kCFBooleanFalse } {
+            Ok(false)
         } else {
             Err(Self::Error::CouldNotExtractValue)
         }

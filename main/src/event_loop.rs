@@ -26,6 +26,7 @@ pub(super) enum Event {
 pub(super) struct EventLoop {
     keyboard_rx: std::sync::mpsc::Receiver<KeyCommand>,
     previous_displays: HashMap<DisplayId, HashSet<WindowId>>,
+    managed_windows: HashSet<WindowId>,
 }
 
 impl EventLoop {
@@ -33,6 +34,7 @@ impl EventLoop {
         Self {
             keyboard_rx,
             previous_displays: HashMap::new(),
+            managed_windows: HashSet::new(),
         }
     }
 
@@ -55,17 +57,21 @@ impl EventLoop {
                             display_id,
                             display: cg_display,
                         });
+                        self.managed_windows.extend(&new_window_ids);
                         self.previous_displays.insert(display_id, new_window_ids);
                     }
                     Some(old_window_ids) => {
                         for &window_id in new_window_ids.difference(old_window_ids) {
-                            if let Some(window) =
-                                cg_display.windows.iter().find(|w| w.number() == window_id)
-                            {
-                                events.push(Event::WindowAdded {
-                                    display_id,
-                                    window: window.clone(),
-                                });
+                            if !self.managed_windows.contains(&window_id) {
+                                if let Some(window) =
+                                    cg_display.windows.iter().find(|w| w.number() == window_id)
+                                {
+                                    events.push(Event::WindowAdded {
+                                        display_id,
+                                        window: window.clone(),
+                                    });
+                                    self.managed_windows.insert(window_id);
+                                }
                             }
                         }
 

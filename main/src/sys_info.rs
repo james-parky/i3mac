@@ -38,18 +38,19 @@ impl SysInfo {
             .output()
             .ok()?;
         if output.status.success() {
-            String::from_utf8(output.stdout).ok().map(|s| {
-                let ipv6_line = s.lines().nth(6).expect("no ipv6 addr list");
-                let addr = ipv6_line
-                    .split_whitespace()
-                    .last()
-                    .expect("no ipv6 address");
-                if addr == "none" {
-                    None
-                } else {
-                    Some(addr.to_string())
-                }
-            })?
+            // String::from_utf8(output.stdout).ok().map(|s| {
+            //     let ipv6_line = s.lines().nth(6).expect("no ipv6 addr list");
+            //     let addr = ipv6_line
+            //         .split_whitespace()
+            //         .last()
+            //         .expect("no ipv6 address");
+            //     if addr == "none" {
+            //         None
+            //     } else {
+            //         Some(addr.to_string())
+            //     }
+            // })?
+            String::from_utf8(output.stdout).ok()
         } else {
             None
         }

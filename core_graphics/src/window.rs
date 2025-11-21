@@ -71,6 +71,10 @@ macro_rules! get_or_error {
 }
 
 impl Window {
+    pub fn bounds(&self) -> &Bounds {
+        &self.bounds
+    }
+
     pub fn number(&self) -> WindowId {
         self.number.into()
     }
@@ -81,10 +85,7 @@ impl Window {
 
     pub fn all_windows() -> Result<Vec<Window>> {
         let array_ref = unsafe {
-            CGWindowListCopyWindowInfo(
-                WindowListOption::EXCLUDE_DESKTOP_ELEMENTS | WindowListOption::ON_SCREEN_ONLY,
-                WindowId::NULL,
-            )
+            CGWindowListCopyWindowInfo(WindowListOption::EXCLUDE_DESKTOP_ELEMENTS, WindowId::NULL)
         };
 
         let array = unsafe { Array::<Dictionary>::try_from_raw(array_ref) }
