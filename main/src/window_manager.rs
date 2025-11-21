@@ -1,6 +1,6 @@
 use crate::{
     container,
-    display::{PhysicalDisplay, VirtualDisplayId},
+    display::{LogicalDisplayId, PhysicalDisplay},
     error::{Error, Result},
     event_loop::Event,
 };
@@ -50,7 +50,7 @@ impl WindowManager {
                 }
             }
             // TODO: Need to not trigger this from windows that disappear due to
-            //       switching virtual display
+            //       switching logical display
             Event::WindowRemoved {
                 display_id,
                 window_id,
@@ -124,7 +124,7 @@ impl WindowManager {
                 }
             }
             KeyCommand::FocusDisplay(display_id) => {
-                if let Err(e) = self.handle_focus_virtual_display(display_id.into()) {
+                if let Err(e) = self.handle_focus_logical_display(display_id.into()) {
                     eprintln!("failed to focus display: {e:?}");
                 }
             }
@@ -188,7 +188,7 @@ impl WindowManager {
 
     fn handle_move_focused_window_to_display(
         &mut self,
-        target_virtual_display_id: VirtualDisplayId,
+        target_logical_display_id: LogicalDisplayId,
     ) -> Result<()> {
         let focused_window = ax_ui::Window::try_get_focused().map_err(Error::AxUi)?;
         // Find the CG window info before removing
@@ -212,21 +212,21 @@ impl WindowManager {
             return Err(Error::CouldNotRemoveWindow);
         }
 
-        // find physical display that owns virtual_display_id
+        // find physical display that owns logical_display_id
         let mut target_physical_display = None;
         for display in self.physical_displays.values_mut() {
-            if display.has_virtual_display(target_virtual_display_id) {
+            if display.has_logical_display(target_logical_display_id) {
                 target_physical_display = Some(display);
                 break;
             }
         }
 
-        // if we didnt find it, create new virtual display on this phyiscal display before adding
+        // if we didnt find it, create new logical display on this phyiscal display before adding
         if target_physical_display.is_none() {
             self.physical_displays
                 .get_mut(&self.active_physical_display)
                 .unwrap()
-                .create_virtual_display(target_virtual_display_id);
+                .create_logical_display(target_logical_display_id);
             target_physical_display = Some(
                 self.physical_displays
                     .get_mut(&self.active_physical_display)
@@ -236,17 +236,17 @@ impl WindowManager {
 
         target_physical_display
             .unwrap()
-            .add_window_to_virtual(cg_window, target_virtual_display_id)?;
+            .add_window_to_logical(cg_window, target_logical_display_id)?;
 
         Ok(())
     }
 
-    fn handle_focus_virtual_display(&mut self, virtual_id: VirtualDisplayId) -> Result<()> {
+    fn handle_focus_logical_display(&mut self, logical_id: LogicalDisplayId) -> Result<()> {
         let mut target_physical_id: Option<DisplayId> = None;
 
-        // find the physical display that contains the target virtual id
+        // find the physical display that contains the target logical id
         for (physical_id, physical) in &self.physical_displays {
-            if physical.has_virtual_display(virtual_id) {
+            if physical.has_logical_display(logical_id) {
                 target_physical_id = Some(*physical_id);
                 break;
             }
@@ -254,7 +254,7 @@ impl WindowManager {
 
         match target_physical_id {
             None => {
-                // virtual id does not exist; create it on this physical display
+                // logical id does not exist; create it on this physical display
                 let focused_physical_id = self.get_focused_physical_display()?;
 
                 let physical = self
@@ -262,14 +262,14 @@ impl WindowManager {
                     .get_mut(&focused_physical_id)
                     .unwrap();
 
-                physical.create_virtual_display(virtual_id);
-                physical.switch_to(virtual_id)?;
+                physical.create_logical_display(logical_id);
+                physical.switch_to(logical_id)?;
                 Ok(())
             }
             Some(physical_id) => {
                 let physical = self.physical_displays.get_mut(&physical_id).unwrap();
-                physical.switch_to(virtual_id)?;
-                // Only need to focus the active display if the virtual display
+                physical.switch_to(logical_id)?;
+                // Only need to focus the active display if the logical display
                 // already exists. Ones that have no windows will have been
                 // deleted when they were last focused off of.
                 physical.active_display().refocus()?;
@@ -282,7 +282,7 @@ impl WindowManager {
         if let Ok(focused_window) = ax_ui::Window::try_get_focused() {
             for (physical_id, physical) in &self.physical_displays {
                 if physical
-                    .active_virtual_display()
+                    .active_logical_display()
                     .ok_or(Error::DisplayNotFound)?
                     .window_ids()
                     .contains(&focused_window)

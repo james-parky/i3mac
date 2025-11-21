@@ -1,4 +1,4 @@
-use crate::{display::VirtualDisplayId, sys_info::SysInfo};
+use crate::{display::LogicalDisplayId, sys_info::SysInfo};
 use core_graphics::Bounds;
 use foundation::{Application, Colour, Label, Window};
 
@@ -16,12 +16,12 @@ impl StatusBar {
     pub const HEIGHT: f64 = 25.0;
 
     pub fn new(
-        focused_id: VirtualDisplayId,
-        virtual_ids: Vec<VirtualDisplayId>,
+        focused_id: LogicalDisplayId,
+        logical_ids: Vec<LogicalDisplayId>,
         bounds: Bounds,
     ) -> Self {
-        let mut virtual_ids = virtual_ids;
-        virtual_ids.sort();
+        let mut logical_ids = logical_ids;
+        logical_ids.sort();
 
         unsafe {
             let _application = Application::new();
@@ -59,7 +59,7 @@ impl StatusBar {
 
             const ID_START_X: f64 = 0.0;
             const ID_WIDTH: f64 = 20.0;
-            for (i, id) in virtual_ids.iter().enumerate() {
+            for (i, id) in logical_ids.iter().enumerate() {
                 let display_id_bounds = Bounds {
                     x: ID_START_X + (i as f64 * ID_WIDTH),
                     y: 0.0,
@@ -122,7 +122,7 @@ impl StatusBar {
         }
     }
 
-    fn id_label(display_id: VirtualDisplayId, bounds: Bounds, colour: Colour) -> Label {
+    fn id_label(display_id: LogicalDisplayId, bounds: Bounds, colour: Colour) -> Label {
         unsafe { Label::new(bounds, display_id.to_string(), colour) }
     }
 }
