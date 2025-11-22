@@ -3,6 +3,7 @@ use std::process::Command;
 pub(crate) struct SysInfo {
     pub ipv4: Option<String>,
     pub ipv6: Option<String>,
+    #[allow(dead_code)]
     pub battery_level: Option<u8>,
 }
 
@@ -62,12 +63,12 @@ impl SysInfo {
         let text = String::from_utf8(output.stdout).ok()?;
 
         for line in text.lines() {
-            if line.contains("InternalBattery") {
-                if let Some(percent_pos) = line.find('%') {
-                    let start = line[..percent_pos].rfind(|c: char| !c.is_numeric())?;
-                    let percent_str = &line[start + 1..percent_pos];
-                    return percent_str.parse().ok();
-                }
+            if line.contains("InternalBattery")
+                && let Some(percent_pos) = line.find('%')
+            {
+                let start = line[..percent_pos].rfind(|c: char| !c.is_numeric())?;
+                let percent_str = &line[start + 1..percent_pos];
+                return percent_str.parse().ok();
             }
         }
 

@@ -12,6 +12,18 @@ pub enum Axis {
     Horizontal,
 }
 
+impl Axis {
+    fn can_resize_in_direction(&self, direction: Direction) -> bool {
+        matches!(
+            (self, direction),
+            (Axis::Horizontal, Direction::Left)
+                | (Axis::Horizontal, Direction::Right)
+                | (Axis::Vertical, Direction::Up)
+                | (Axis::Vertical, Direction::Down)
+        )
+    }
+}
+
 #[derive(Debug)]
 pub(super) enum Container {
     Empty {
@@ -150,7 +162,7 @@ impl Container {
 
     pub(super) fn find_window(&self, window_id: WindowId) -> Option<&Window> {
         match self {
-            Self::Leaf { window, .. } if window.cg().number() == window_id => Some(&window),
+            Self::Leaf { window, .. } if window.cg().number() == window_id => Some(window),
             Self::Split { children, .. } => children
                 .iter()
                 .find_map(|child| child.find_window(window_id)),
@@ -345,15 +357,7 @@ impl Container {
                 let child = children.iter().position(|c| c.contains_window(window_id));
 
                 if let Some(i) = child {
-                    let can_resize = match (axis, &direction) {
-                        (Axis::Horizontal, Direction::Left) => true,
-                        (Axis::Horizontal, Direction::Right) => true,
-                        (Axis::Vertical, Direction::Up) => true,
-                        (Axis::Vertical, Direction::Down) => true,
-                        _ => false,
-                    };
-
-                    if can_resize {
+                    if axis.can_resize_in_direction(direction) {
                         self.resize_at_split(i, direction, amount)
                     } else {
                         match children[i].resize_window(window_id, direction, amount) {
@@ -379,13 +383,7 @@ impl Container {
         amount: f64,
     ) -> Result<()> {
         if let Self::Split { axis, .. } = self {
-            let can_resize = match (axis, direction) {
-                (Axis::Horizontal, Direction::Left) | (Axis::Horizontal, Direction::Right) => true,
-                (Axis::Vertical, Direction::Up) | (Axis::Vertical, Direction::Down) => true,
-                _ => false,
-            };
-
-            if can_resize {
+            if axis.can_resize_in_direction(direction) {
                 // Resize at this level, treating child_idx as the focused container
                 self.resize_at_split(child_idx, direction, amount)
             } else {

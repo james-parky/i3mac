@@ -13,6 +13,7 @@ pub(super) enum Event {
     WindowFocused {
         window_id: WindowId,
     },
+    #[allow(dead_code)]
     DisplayAdded {
         display_id: DisplayId,
         display: core_graphics::Display,
@@ -20,7 +21,6 @@ pub(super) enum Event {
     KeyCommand {
         command: KeyCommand,
     },
-    // Tick,
 }
 
 pub(super) struct EventLoop {
@@ -62,16 +62,15 @@ impl EventLoop {
                     }
                     Some(old_window_ids) => {
                         for &window_id in new_window_ids.difference(old_window_ids) {
-                            if !self.managed_windows.contains(&window_id) {
-                                if let Some(window) =
+                            if !self.managed_windows.contains(&window_id)
+                                && let Some(window) =
                                     cg_display.windows.iter().find(|w| w.number() == window_id)
-                                {
-                                    events.push(Event::WindowAdded {
-                                        display_id,
-                                        window: window.clone(),
-                                    });
-                                    self.managed_windows.insert(window_id);
-                                }
+                            {
+                                events.push(Event::WindowAdded {
+                                    display_id,
+                                    window: window.clone(),
+                                });
+                                self.managed_windows.insert(window_id);
                             }
                         }
 

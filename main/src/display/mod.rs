@@ -1,5 +1,5 @@
 mod logical;
 mod physical;
 
-pub use logical::*;
-pub use physical::*;
+pub(crate) use logical::*;
+pub(crate) use physical::*;

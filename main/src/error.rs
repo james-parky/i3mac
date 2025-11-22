@@ -8,10 +8,7 @@ pub(crate) enum Error {
     CannotSplitAlreadySplitContainer,
     CannotFocusEmptyDisplay,
     CannotResizeRoot,
-    CannotMoveWindowToSameDisplay,
-    CannotResizeChildrenOnNonSplit,
     CannotFindParentLeaf,
-    NoFocusedWindow,
     ExpectedSplitContainer,
     CouldNotRemoveWindow,
 }
