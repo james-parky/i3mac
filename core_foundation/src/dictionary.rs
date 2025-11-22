@@ -31,7 +31,7 @@ pub struct Dictionary(HashMap<CFKey, CFTypeRef>);
 impl TryFrom<CFTypeRef> for Dictionary {
     type Error = Error;
     fn try_from(value: CFTypeRef) -> Result<Self> {
-        unsafe { Dictionary::try_from_raw(value.0 as CFDictionaryRef) }
+        Dictionary::try_from_raw(value.0 as CFDictionaryRef)
     }
 }
 
@@ -47,7 +47,8 @@ impl Dictionary {
         value.and_then(|&v| V::try_from(v).ok())
     }
 
-    pub unsafe fn try_from_raw(dict: CFDictionaryRef) -> Result<Self> {
+    #[allow(clippy::not_unsafe_ptr_arg_deref)]
+    pub fn try_from_raw(dict: CFDictionaryRef) -> Result<Self> {
         if dict.is_null() {
             return Err(Error::NulDictionary);
         }

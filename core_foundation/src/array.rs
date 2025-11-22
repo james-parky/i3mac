@@ -1,6 +1,6 @@
 use crate::{
-    CFArrayGetCount, CFArrayGetValueAtIndex, CFArrayRef, CFIndex, CFRelease, CFRetain, CFTypeRef,
-    Error, Result,
+    CFArrayGetCount, CFArrayGetValueAtIndex, CFArrayRef, CFIndex, CFRelease, CFTypeRef, Error,
+    Result,
 };
 
 #[derive(Debug)]
@@ -21,7 +21,8 @@ impl<T> Array<T>
 where
     T: TryFrom<CFTypeRef, Error = Error>,
 {
-    pub unsafe fn try_from_raw(array: CFArrayRef) -> Result<Array<T>> {
+    #[allow(clippy::not_unsafe_ptr_arg_deref)]
+    pub fn try_from_raw(array: CFArrayRef) -> Result<Array<T>> {
         if array.is_null() {
             return Err(Error::NullCFArray);
         }
