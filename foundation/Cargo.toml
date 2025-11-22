@@ -5,4 +5,3 @@ edition = "2024"
 
 [dependencies]
 core_graphics = { path = "../core_graphics" }
-libc = "0.2"

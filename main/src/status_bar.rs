@@ -24,7 +24,7 @@ impl StatusBar {
         logical_ids.sort();
 
         unsafe {
-            let _application = Application::new();
+            let _application = Application::default();
 
             let main_display_bounds = core_graphics::Display::main_display_bounds();
             let window_bottom_left = main_display_bounds.height - (bounds.y + bounds.height);

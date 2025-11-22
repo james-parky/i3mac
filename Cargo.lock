@@ -28,7 +28,6 @@ name = "foundation"
 version = "0.1.0"
 dependencies = [
  "core_graphics",
- "libc",
 ]
 
 [[package]]
