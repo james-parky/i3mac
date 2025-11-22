@@ -50,6 +50,7 @@ impl Container {
             let window_bounds = bounds.with_pad(padding);
             let mut window = Window::try_new(cg_window, window_bounds)?;
             window.init()?;
+
             *self = Self::Split {
                 bounds: *bounds,
                 axis: Axis::default(),
@@ -190,6 +191,82 @@ impl Container {
         }
     }
 
+    fn remove_window_from_leaf(&mut self, window_id: WindowId) -> Result<Option<Window>> {
+        if let Self::Leaf { window, .. } = self {
+            if window.cg().number() == window_id {
+                let old = std::mem::replace(
+                    self,
+                    Self::Empty {
+                        bounds: Bounds::default(),
+                    },
+                );
+                if let Self::Leaf { window, .. } = old {
+                    Ok(Some(window))
+                } else {
+                    unreachable!()
+                }
+            } else {
+                Ok(None)
+            }
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn is_parent_leaf(&self, window_id: WindowId) -> bool {
+        matches!(self, Self::Leaf{window,..} if window.cg().number() == window_id)
+    }
+
+    fn is_empty(&self) -> bool {
+        matches!(self, Self::Empty { .. })
+    }
+
+    fn remove_window_from_split(
+        &mut self,
+        window_id: WindowId,
+        padding: f64,
+    ) -> Result<Option<Window>> {
+        if let Self::Split {
+            children,
+            bounds,
+            axis,
+        } = self
+        {
+            if let Some(i) = children
+                .iter()
+                .position(|child| child.is_parent_leaf(window_id))
+            {
+                let removed_child = children.remove(i);
+                children.retain(|c| !c.is_empty());
+
+                if children.is_empty() {
+                    *self = Self::Empty { bounds: *bounds };
+                } else {
+                    let new_children_bounds =
+                        spread_bounds_in_direction(*bounds, *axis, children.len(), padding);
+                    for (child, new_bounds) in children.iter_mut().zip(new_children_bounds) {
+                        child.resize(new_bounds, padding)?;
+                    }
+                }
+                return Ok(Some(match removed_child {
+                    Self::Leaf { window, .. } => window,
+                    _ => unreachable!(),
+                }));
+            }
+
+            for child in children.iter_mut() {
+                if let Some(window) = child.remove_window(window_id, padding)? {
+                    children.retain(|c| !c.is_empty());
+                    return Ok(Some(window));
+                }
+            }
+
+            Ok(None)
+        } else {
+            Ok(None)
+        }
+    }
+
     pub(super) fn remove_window(
         &mut self,
         window_id: WindowId,
@@ -197,66 +274,15 @@ impl Container {
     ) -> Result<Option<Window>> {
         match self {
             Self::Empty { .. } => Ok(None),
-            Self::Leaf { window, .. } => {
-                if window.cg().number() == window_id {
-                    let old = std::mem::replace(
-                        self,
-                        Self::Empty {
-                            bounds: Bounds::default(),
-                        },
-                    );
-                    if let Self::Leaf { window, .. } = old {
-                        Ok(Some(window))
-                    } else {
-                        unreachable!()
-                    }
-                } else {
-                    Ok(None)
-                }
-            }
-            Self::Split {
-                children,
-                bounds,
-                axis: direction,
-            } => {
-                if let Some(i) = children.iter().position(|child|
-                    matches!(child, Self::Leaf{window,..} if window.cg().number() == window_id)
-                ) {
-
-                    let removed_child = children.remove(i);
-                    children.retain(|c| !matches!(c, Self::Empty {..}));
-                    if children.is_empty() {
-                        *self = Self::Empty { bounds: *bounds };
-                    } else {
-                        let new_children_bounds = spread_bounds_in_direction(*bounds, *direction, children.len(), padding);
-                        for (child, new_bounds) in children.iter_mut().zip(new_children_bounds) {
-                            child.resize(new_bounds,padding)?;
-                        }
-                    }
-                    return Ok(Some(match removed_child{Self::Leaf{window,..} => window, _=>unreachable!()}));
-                }
-
-                for child in children.iter_mut() {
-                    if let Some(window) = child.remove_window(window_id, padding)? {
-                        children.retain(|c| !matches!(c, Self::Empty { .. }));
-                        return Ok(Some(window));
-                    }
-                }
-
-                Ok(None)
-            }
+            Self::Leaf { .. } => self.remove_window_from_leaf(window_id),
+            Self::Split { .. } => self.remove_window_from_split(window_id, padding),
         }
     }
 
     fn resize_children(&mut self, new_bounds: Bounds, padding: f64) -> Result<()> {
-        if let Self::Split {
-            children,
-            axis: direction,
-            ..
-        } = self
-        {
+        if let Self::Split { children, axis, .. } = self {
             let new_children_bounds =
-                spread_bounds_in_direction(new_bounds, *direction, children.len(), padding);
+                spread_bounds_in_direction(new_bounds, *axis, children.len(), padding);
 
             for (child, child_bounds) in children.iter_mut().zip(new_children_bounds) {
                 child.resize(child_bounds, padding)?;
@@ -291,9 +317,9 @@ impl Container {
         }
 
         let is_direct_split_ancestor = match self {
-            Self::Split { children, .. } => children.iter().any(|child| {
-                matches!(child, Self::Leaf { window, .. } if window.cg().number() == window_id)
-            }),
+            Self::Split { children, .. } => {
+                children.iter().any(|child| child.is_parent_leaf(window_id))
+            }
             _ => false,
         };
 
