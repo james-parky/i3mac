@@ -179,7 +179,7 @@ impl PhysicalDisplay {
     }
 
     // Delegate focus shifting to the currently active logical display.
-    pub fn handle_focus_shift(&mut self, direction: Direction) -> Result<()> {
+    pub fn shift_focus(&mut self, direction: Direction) -> Result<()> {
         self.logical_displays
             .get_mut(&self.active_logical_id)
             .ok_or(Error::DisplayNotFound)?

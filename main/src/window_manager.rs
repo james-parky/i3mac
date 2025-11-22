@@ -4,12 +4,12 @@ use crate::{
     error::{Error, Result},
     event_loop::Event,
 };
-use core_graphics::{Direction, DisplayId, KeyCommand, Window, WindowId};
+use core_graphics::{Direction, DisplayId, KeyCommand, WindowId};
 use std::collections::HashMap;
 
 pub(super) struct WindowManager {
     physical_displays: HashMap<DisplayId, PhysicalDisplay>,
-    active_physical_display: DisplayId,
+    active_physical_display_id: DisplayId,
 }
 
 impl WindowManager {
@@ -27,17 +27,17 @@ impl WindowManager {
         // Display with the lowest Core Graphics ID is chosen to be initially
         // focused
         // TODO: horrible error on not detecting any displays
-        let active_physical_display = core_graphics::Display::main_display();
+        let active_physical_display_id = core_graphics::Display::main_display();
 
         // TODO: error
         let _ = physical_displays
-            .get(&active_physical_display)
+            .get(&active_physical_display_id)
             .unwrap()
             .focus();
 
         Self {
             physical_displays,
-            active_physical_display,
+            active_physical_display_id,
         }
     }
 
@@ -79,11 +79,15 @@ impl WindowManager {
     // window's parent split. Therefore:
     //  1. Get the physical display that said window is on.
     //  2. Add window to it.
-    fn handle_window_added(&mut self, display_id: DisplayId, window: Window) -> Result<()> {
+    fn handle_window_added(
+        &mut self,
+        display_id: DisplayId,
+        cg_window: core_graphics::Window,
+    ) -> Result<()> {
         self.physical_displays
             .get_mut(&display_id)
             .ok_or(Error::DisplayNotFound)?
-            .add_window(window)
+            .add_window(cg_window)
     }
 
     fn handle_window_removed(&mut self, display_id: DisplayId, window_id: WindowId) -> Result<()> {
@@ -91,20 +95,20 @@ impl WindowManager {
             .physical_displays
             .get_mut(&display_id)
             .ok_or(Error::DisplayNotFound)?
-            .remove_window(window_id)
+            .remove_window(window_id)?
         {
-            Err(e) => Err(e),
-            Ok(false) => Err(Error::CouldNotRemoveWindow),
-            Ok(true) => Ok(()),
+            false => Err(Error::CouldNotRemoveWindow),
+            true => Ok(()),
         }
     }
 
     fn handle_window_focused(&mut self, window_id: WindowId) {
-        for (id, display) in self.physical_displays.iter_mut() {
-            if display.window_ids().contains(&window_id) {
-                self.active_physical_display = *id;
-                return;
-            }
+        if let Some((id, _)) = self
+            .physical_displays
+            .iter_mut()
+            .find(|(_, display)| display.window_ids().contains(&window_id))
+        {
+            self.active_physical_display_id = *id;
         }
     }
 
@@ -163,56 +167,59 @@ impl WindowManager {
     }
 
     fn handle_resize(&mut self, direction: Direction) -> Result<()> {
-        self.physical_displays
-            .get_mut(&self.active_physical_display)
-            .unwrap()
+        self.active_physical_display_mut()
             .resize_focused_window(direction)
     }
 
     fn handle_split(&mut self, direction: container::Axis) -> Result<()> {
-        self.physical_displays
-            .get_mut(&self.active_physical_display)
-            .unwrap()
-            .split(direction)
+        self.active_physical_display_mut().split(direction)
     }
 
-    // When handling a focus shift, only allow movement within the currently
-    // active physical display, so delegate to that.
     fn handle_focus_shift(&mut self, direction: Direction) -> Result<()> {
-        println!("focusing shift towards {direction:?}");
-        self.physical_displays
-            .get_mut(&self.active_physical_display)
-            .ok_or(Error::DisplayNotFound)?
-            .handle_focus_shift(direction)
+        self.active_physical_display_mut().shift_focus(direction)
     }
 
+    /// Move the currently focused window from one logical display to another.
+    ///
+    /// If the target logical display ID does not exist, first create it on the
+    /// currently active physical display, then move the window there.
+    // In order to do this:
+    //  1. Get the currently focused window.
+    //  2. Find the physical display that currently owns the focused window, and
+    //     the Core Graphics window that corresponds to it.
+    //  3. Try to remove the window from the source physical display.
+    //  4. Find the target physical display ID from the target logical display
+    //     ID. If no physical display manages said logical display ID, create it
+    //     on the currently active physical display.
+    //  5. Try to add the removed Core Graphics window to the target logical
+    //     display.
     fn handle_move_focused_window_to_display(
         &mut self,
         target_logical_display_id: LogicalDisplayId,
     ) -> Result<()> {
         let focused_window = ax_ui::Window::try_get_focused().map_err(Error::AxUi)?;
-        // Find the CG window info before removing
-        let mut cg_window: Option<core_graphics::Window> = None;
 
-        for display in self.physical_displays.values() {
-            if let Some(window) = display.active_display().find_window(focused_window) {
-                cg_window = Some(window.cg().clone());
-                break;
-            }
-        }
-
-        let cg_window = cg_window.ok_or(Error::WindowNotFound)?;
+        // Find the physical display that owns the currently focused window.
+        let (source_physical_display_id, cg_window) = self
+            .physical_displays
+            .iter()
+            .find_map(|(id, display)| {
+                display
+                    .active_display()
+                    .find_window(focused_window)
+                    .map(|w| (*id, w.cg().clone()))
+            })
+            .ok_or(Error::WindowNotFound)?;
 
         if !self
             .physical_displays
-            .get_mut(&self.active_physical_display)
+            .get_mut(&source_physical_display_id)
             .unwrap()
             .remove_window(focused_window)?
         {
             return Err(Error::CouldNotRemoveWindow);
         }
 
-        // find physical display that owns logical_display_id
         let mut target_physical_display = None;
         for display in self.physical_displays.values_mut() {
             if display.has_logical_display(target_logical_display_id) {
@@ -221,17 +228,10 @@ impl WindowManager {
             }
         }
 
-        // if we didnt find it, create new logical display on this phyiscal display before adding
         if target_physical_display.is_none() {
-            self.physical_displays
-                .get_mut(&self.active_physical_display)
-                .unwrap()
+            self.active_physical_display_mut()
                 .create_logical_display(target_logical_display_id);
-            target_physical_display = Some(
-                self.physical_displays
-                    .get_mut(&self.active_physical_display)
-                    .unwrap(),
-            );
+            target_physical_display = Some(self.active_physical_display_mut());
         }
 
         target_physical_display
@@ -241,21 +241,26 @@ impl WindowManager {
         Ok(())
     }
 
+    /// Focus a logical display by ID.
+    ///
+    /// If the logical display does not already exist, create it on the
+    /// currently active physical display.
+    ///
+    /// We only need to focus the active display if the logical display already
+    /// exists. Ones that have no windows will have been deleted when they were
+    /// last focused off of.
     fn handle_focus_logical_display(&mut self, logical_id: LogicalDisplayId) -> Result<()> {
-        let mut target_physical_id: Option<DisplayId> = None;
-
-        // find the physical display that contains the target logical id
-        for (physical_id, physical) in &self.physical_displays {
-            if physical.has_logical_display(logical_id) {
-                target_physical_id = Some(*physical_id);
-                break;
+        let target_physical_display_id = self.physical_displays.iter().find_map(|(id, display)| {
+            if display.has_logical_display(logical_id) {
+                Some(*id)
+            } else {
+                None
             }
-        }
+        });
 
-        match target_physical_id {
+        match target_physical_display_id {
             None => {
-                // logical id does not exist; create it on this physical display
-                let focused_physical_id = self.get_focused_physical_display()?;
+                let focused_physical_id = self.try_get_focused_display_id()?;
 
                 let physical = self
                     .physical_displays
@@ -264,21 +269,20 @@ impl WindowManager {
 
                 physical.create_logical_display(logical_id);
                 physical.switch_to(logical_id)?;
-                Ok(())
             }
             Some(physical_id) => {
                 let physical = self.physical_displays.get_mut(&physical_id).unwrap();
                 physical.switch_to(logical_id)?;
-                // Only need to focus the active display if the logical display
-                // already exists. Ones that have no windows will have been
-                // deleted when they were last focused off of.
                 physical.active_display().refocus()?;
-                Ok(())
             }
         }
+
+        Ok(())
     }
 
-    fn get_focused_physical_display(&self) -> Result<DisplayId> {
+    /// Try to get the ID of the physical display that owns the currently
+    /// focused window.
+    fn try_get_focused_display_id(&self) -> Result<DisplayId> {
         if let Ok(focused_window) = ax_ui::Window::try_get_focused() {
             for (physical_id, physical) in &self.physical_displays {
                 if physical
@@ -298,13 +302,22 @@ impl WindowManager {
             .copied()
             .ok_or(Error::DisplayNotFound)
     }
+
+    fn active_physical_display_mut(&mut self) -> &mut PhysicalDisplay {
+        self.physical_displays
+            .get_mut(&self.active_physical_display_id)
+            .unwrap()
+    }
 }
 
-// When opening a new Terminal via `open`, the OS will sometimes the window in
-// the same "state" as the previously focused window of the same application (if
-// one exists), i.e. opening a window already minimised. If this happens, Core
-// Graphics won't detect it has been happened, and therefore no will the window
-// manager. To prevent this, do some faffing via AppleScript.
+/// Open a new "Terminal" application window.
+///
+/// When opening a new Terminal via `open -n -a Terminal`, the OS will sometimes
+/// open the window in the same "state" as the previously focused window of the
+/// same application (if one exists), i.e. opening a window already minimised.
+/// If this happens, Core Graphics won't detect it has opened, and therefore nor
+/// will the window manager. To prevent this, do some faffing via AppleScript.
+// TODO: Make the terminal application used configurable
 fn open_terminal() {
     use std::process::Command;
     let _ = Command::new("open")
