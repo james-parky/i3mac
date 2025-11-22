@@ -23,6 +23,9 @@
     - New terminals can be opened via <kbd>⌘</kbd>+<kbd>↩︎</kbd>.
     - Containers can be split either horizontally or vertically using <kbd>⌘</kbd>+<kbd>⌥</kbd>+<kbd>V</kbd> and <kbd>
       ⌘</kbd>+<kbd>⌥</kbd>+<kbd>H</kbd> respectively.
+    - Windows can be toggled as (non)-floating with <kbd>⌘</kbd>+<kbd>⌥</kbd>+<kbd>C</kbd>. Floating windows are tracked
+      but not managed at all by the window manager. That is to say, the only way to interact with a window after it has
+      been toggled floating is via the mouse or other keybindings/tools external to `i3mac`.
 
 ## Command Line Arguments
 
