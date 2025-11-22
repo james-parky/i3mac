@@ -5,6 +5,7 @@ use crate::{
     status_bar::StatusBar,
     window::Window,
 };
+use container::Axis;
 use core_graphics::{Bounds, Direction, WindowId};
 use std::collections::HashSet;
 
@@ -121,7 +122,7 @@ impl LogicalDisplay {
     //     of the given direction, and shift the leaf into it.
     //  2. If there is no focused window, switch the split direction of the root
     //     container.
-    pub fn split(&mut self, direction: container::Direction) -> Result<()> {
+    pub fn split(&mut self, direction: Axis) -> Result<()> {
         if let Some(window_id) = self.focused_window {
             let container = self
                 .root

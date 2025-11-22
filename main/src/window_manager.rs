@@ -143,12 +143,12 @@ impl WindowManager {
             //     // }
             // }
             KeyCommand::ToggleVerticalSplit => {
-                if let Err(e) = self.handle_split(container::Direction::Vertical) {
+                if let Err(e) = self.handle_split(container::Axis::Vertical) {
                     eprintln!("failed to split container vertically: {e:?}");
                 }
             }
             KeyCommand::ToggleHorizontalSplit => {
-                if let Err(e) = self.handle_split(container::Direction::Horizontal) {
+                if let Err(e) = self.handle_split(container::Axis::Horizontal) {
                     eprintln!("failed to split container horizontally: {e:?}");
                 }
             }
@@ -169,7 +169,7 @@ impl WindowManager {
             .resize_focused_window(direction)
     }
 
-    fn handle_split(&mut self, direction: container::Direction) -> Result<()> {
+    fn handle_split(&mut self, direction: container::Axis) -> Result<()> {
         self.physical_displays
             .get_mut(&self.active_physical_display)
             .unwrap()

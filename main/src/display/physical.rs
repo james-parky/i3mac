@@ -4,6 +4,7 @@ use crate::{
     error::{Error, Result},
     status_bar::StatusBar,
 };
+use container::Axis;
 use core_graphics::{Bounds, Direction, DisplayId, WindowId};
 use std::collections::{HashMap, HashSet};
 
@@ -75,7 +76,7 @@ impl PhysicalDisplay {
             .remove_window(window_id)
     }
 
-    pub fn split(&mut self, direction: container::Direction) -> Result<()> {
+    pub fn split(&mut self, direction: Axis) -> Result<()> {
         self.logical_displays
             .get_mut(&self.active_logical_id)
             .unwrap()

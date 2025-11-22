@@ -2,36 +2,14 @@ use crate::{
     error::{Error, Result},
     window::Window,
 };
-use core_graphics::{Bounds, WindowId};
+use core_graphics::{Bounds, Direction, WindowId};
 use std::collections::HashSet;
 
 #[derive(Debug, Default, Copy, Clone, Hash)]
-pub enum Direction {
+pub enum Axis {
     Vertical,
     #[default]
     Horizontal,
-}
-
-impl Direction {
-    pub fn cardinal(&self) -> (core_graphics::Direction, core_graphics::Direction) {
-        match self {
-            Self::Vertical => (core_graphics::Direction::Up, core_graphics::Direction::Down),
-            Self::Horizontal => (
-                core_graphics::Direction::Left,
-                core_graphics::Direction::Right,
-            ),
-        }
-    }
-
-    pub fn opposite_cardinal(&self) -> (core_graphics::Direction, core_graphics::Direction) {
-        match self {
-            Self::Vertical => (core_graphics::Direction::Down, core_graphics::Direction::Up),
-            Self::Horizontal => (
-                core_graphics::Direction::Right,
-                core_graphics::Direction::Left,
-            ),
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -45,7 +23,7 @@ pub(super) enum Container {
     },
     Split {
         bounds: Bounds,
-        direction: Direction,
+        axis: Axis,
         children: Vec<Container>,
     },
 }
@@ -57,7 +35,7 @@ impl Container {
             window.init()?;
             *self = Self::Split {
                 bounds: *bounds,
-                direction: Direction::default(),
+                axis: Axis::default(),
                 children: vec![Self::Leaf {
                     bounds: *bounds,
                     window,
@@ -79,7 +57,7 @@ impl Container {
         if let Self::Split {
             bounds,
             children,
-            direction,
+            axis: direction,
         } = self
         {
             let num_new_children = children.len() + 1;
@@ -120,7 +98,7 @@ impl Container {
         }
     }
 
-    pub fn split(&mut self, direction: Direction) -> Result<()> {
+    pub fn split(&mut self, direction: Axis) -> Result<()> {
         match self {
             Self::Empty { .. } => Err(Error::CannotSplitEmptyContainer),
             Self::Leaf { bounds, .. } => {
@@ -133,7 +111,7 @@ impl Container {
                 if let Self::Leaf { window, .. } = old_self {
                     *self = Self::Split {
                         bounds: saved_bounds,
-                        direction,
+                        axis: direction,
                         children: vec![Self::Leaf {
                             bounds: saved_bounds,
                             window,
@@ -146,7 +124,7 @@ impl Container {
             }
             Self::Split {
                 children,
-                direction: current_split,
+                axis: current_split,
                 ..
             } if children.len() < 2 => {
                 *current_split = direction;
@@ -202,7 +180,7 @@ impl Container {
             Self::Split {
                 children,
                 bounds,
-                direction,
+                axis: direction,
             } => {
                 if let Some(i) = children.iter().position(|child|
                     matches!(child, Self::Leaf{window,..} if window.cg().number() == window_id)
@@ -236,14 +214,14 @@ impl Container {
     fn resize_children(&mut self, new_bounds: Bounds) -> Result<()> {
         if let Self::Split {
             children,
-            direction,
+            axis: direction,
             ..
         } = self
         {
             let num_children = children.len();
 
             match direction {
-                Direction::Horizontal => {
+                Axis::Horizontal => {
                     let widths = vec![new_bounds.width / num_children as f64; num_children];
                     let mut xs = vec![new_bounds.x];
 
@@ -261,7 +239,7 @@ impl Container {
                         child.resize(child_bounds)?;
                     }
                 }
-                Direction::Vertical => {
+                Axis::Vertical => {
                     let heights = vec![new_bounds.height / num_children as f64; num_children];
                     let mut ys = vec![new_bounds.y];
 
@@ -354,7 +332,7 @@ impl Container {
     pub fn resize_window(
         &mut self,
         window_id: WindowId,
-        direction: core_graphics::Direction,
+        direction: Direction,
         amount: f64,
     ) -> Result<()> {
         match self {
@@ -363,19 +341,15 @@ impl Container {
                 Err(Error::CannotResizeRoot)
             }
             Self::Leaf { .. } => Err(Error::WindowNotFound),
-            Self::Split {
-                children,
-                direction: split_dir,
-                ..
-            } => {
+            Self::Split { children, axis, .. } => {
                 let child = children.iter().position(|c| c.contains_window(window_id));
 
                 if let Some(i) = child {
-                    let can_resize = match (split_dir, &direction) {
-                        (Direction::Horizontal, core_graphics::Direction::Left) => true,
-                        (Direction::Horizontal, core_graphics::Direction::Right) => true,
-                        (Direction::Vertical, core_graphics::Direction::Up) => true,
-                        (Direction::Vertical, core_graphics::Direction::Down) => true,
+                    let can_resize = match (axis, &direction) {
+                        (Axis::Horizontal, Direction::Left) => true,
+                        (Axis::Horizontal, Direction::Right) => true,
+                        (Axis::Vertical, Direction::Up) => true,
+                        (Axis::Vertical, Direction::Down) => true,
                         _ => false,
                     };
 
@@ -401,19 +375,13 @@ impl Container {
     fn resize_child_container(
         &mut self,
         child_idx: usize,
-        direction: core_graphics::Direction,
+        direction: Direction,
         amount: f64,
     ) -> Result<()> {
-        if let Self::Split {
-            direction: split_dir,
-            ..
-        } = self
-        {
-            let can_resize = match (split_dir, direction) {
-                (Direction::Horizontal, core_graphics::Direction::Left)
-                | (Direction::Horizontal, core_graphics::Direction::Right) => true,
-                (Direction::Vertical, core_graphics::Direction::Up)
-                | (Direction::Vertical, core_graphics::Direction::Down) => true,
+        if let Self::Split { axis, .. } = self {
+            let can_resize = match (axis, direction) {
+                (Axis::Horizontal, Direction::Left) | (Axis::Horizontal, Direction::Right) => true,
+                (Axis::Vertical, Direction::Up) | (Axis::Vertical, Direction::Down) => true,
                 _ => false,
             };
 
@@ -432,28 +400,21 @@ impl Container {
     fn resize_at_split(
         &mut self,
         focused_idx: usize,
-        direction: core_graphics::Direction,
+        direction: Direction,
         amount: f64,
     ) -> Result<()> {
-        if let Self::Split {
-            children,
-            direction: split_dir,
-            ..
-        } = self
-        {
+        if let Self::Split { children, axis, .. } = self {
             let at_start_edge = focused_idx == 0;
             let at_end_edge = focused_idx == children.len() - 1;
 
             let is_toward_start = matches!(
-                (*split_dir, direction),
-                (Direction::Horizontal, core_graphics::Direction::Left)
-                    | (Direction::Vertical, core_graphics::Direction::Up)
+                (*axis, direction),
+                (Axis::Horizontal, Direction::Left) | (Axis::Vertical, Direction::Up)
             );
 
             let is_toward_end = matches!(
-                (*split_dir, direction),
-                (Direction::Horizontal, core_graphics::Direction::Right)
-                    | (Direction::Vertical, core_graphics::Direction::Down)
+                (*axis, direction),
+                (Axis::Horizontal, Direction::Right) | (Axis::Vertical, Direction::Down)
             );
 
             let (grow_idx, shrink_idx, is_shrinking) = match (is_toward_start, is_toward_end) {
@@ -473,9 +434,15 @@ impl Container {
             let (grow_dir, shrink_dir) = if (is_shrinking && is_grow_before_shrink)
                 || (!is_shrinking && !is_grow_before_shrink)
             {
-                split_dir.cardinal()
+                match *axis {
+                    Axis::Vertical => (Direction::Up, Direction::Down),
+                    Axis::Horizontal => (Direction::Left, Direction::Right),
+                }
             } else {
-                split_dir.opposite_cardinal()
+                match *axis {
+                    Axis::Vertical => (Direction::Down, Direction::Up),
+                    Axis::Horizontal => (Direction::Right, Direction::Left),
+                }
             };
 
             let new_grow_bounds = children[grow_idx].get_bounds().grow(grow_dir, amount);
@@ -507,10 +474,10 @@ impl Container {
     }
 }
 
-fn spread_bounds_in_direction(original: Bounds, direction: Direction, n: usize) -> Vec<Bounds> {
+fn spread_bounds_in_direction(original: Bounds, direction: Axis, n: usize) -> Vec<Bounds> {
     (0..n)
         .map(|i| match direction {
-            Direction::Horizontal => {
+            Axis::Horizontal => {
                 let width = original.width / n as f64;
                 Bounds {
                     x: original.x + (i as f64 * width),
@@ -518,7 +485,7 @@ fn spread_bounds_in_direction(original: Bounds, direction: Direction, n: usize) 
                     ..original
                 }
             }
-            Direction::Vertical => {
+            Axis::Vertical => {
                 let height = original.height / n as f64;
                 Bounds {
                     y: original.y + (i as f64 * height),
