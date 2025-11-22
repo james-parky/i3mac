@@ -193,8 +193,10 @@ impl TryFrom<CFTypeRef> for CGRect {
         if value.0.is_null() {
             return Err(Error::NulString);
         }
+        // TODO: should try_from_raw be unsafe and these two lines wrapped in an
+        //       unsafe {} block?
         let dict: CFDictionaryRef = value.0 as CFDictionaryRef;
-        let d = unsafe { Dictionary::try_from_raw(dict) }.map_err(Error::CoreFoundation)?;
+        let d = Dictionary::try_from_raw(dict).map_err(Error::CoreFoundation)?;
 
         // TODO: proper errors
         let x: f64 = d.get(&"X").ok_or(Error::NulString)?;

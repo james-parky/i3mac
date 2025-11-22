@@ -21,6 +21,9 @@ fn main() {
     let (key_tx, key_rx) = channel::<KeyCommand>();
     let keyboard = KeyboardHandler::new(key_tx).expect("failed to create keyboard handler");
 
+    // Safety:
+    //  - The `run_loop` supplied to `KeyboardHandler::add_run_loop()` is valid
+    //    as it was returned by the library function `CFRunLoopGetCurrent()`.
     unsafe { keyboard.add_to_run_loop(CFRunLoopGetCurrent(), kCFRunLoopDefaultMode) }
         .expect("failed to add keyboard to run loop");
 

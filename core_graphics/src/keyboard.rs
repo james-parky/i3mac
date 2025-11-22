@@ -218,6 +218,9 @@ impl KeyboardHandler {
         Ok(Self { event_tap, tx_ptr })
     }
 
+    /// # Safety
+    ///
+    /// * `run_loop` must be a non-null pointer to a Core Graphics run loop.
     pub unsafe fn add_to_run_loop(
         &self,
         run_loop: CFRunLoopRef,

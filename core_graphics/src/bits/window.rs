@@ -56,6 +56,7 @@ impl WindowListOption {
     /// List all windows that are currently onscreen. Windows are returned in
     /// order from front to back. When retrieving a list with this option, the
     /// `relative_to_window` argument should be set to `WindowId::Null`.
+    #[allow(dead_code)]
     pub const ON_SCREEN_ONLY: Self = Self(1);
     /// List all windows that are currently onscreen and in front of the window
     /// specified in the `relative_to_window` argument. Windows are returned in

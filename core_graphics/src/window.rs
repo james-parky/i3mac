@@ -88,8 +88,8 @@ impl Window {
             CGWindowListCopyWindowInfo(WindowListOption::EXCLUDE_DESKTOP_ELEMENTS, WindowId::NULL)
         };
 
-        let array = unsafe { Array::<Dictionary>::try_from_raw(array_ref) }
-            .map_err(Error::CoreFoundation)?;
+        // TODO: should try_from_raw be unsafe?
+        let array = Array::<Dictionary>::try_from_raw(array_ref).map_err(Error::CoreFoundation)?;
 
         Ok(array
             .into_iter()
