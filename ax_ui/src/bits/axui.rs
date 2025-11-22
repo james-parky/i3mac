@@ -1,5 +1,5 @@
 use core_foundation::{
-    CFRunLoopSourceRef, CFStringRef, CFTypeRef, Error, kCFBooleanFalse, kCFBooleanTrue,
+    CFRunLoopSourceRef, CFStringRef, CFTypeRef, kCFBooleanFalse, kCFBooleanTrue,
 };
 use core_graphics::CGSize;
 use std::cmp::PartialEq;
