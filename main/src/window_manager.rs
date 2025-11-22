@@ -7,20 +7,50 @@ use crate::{
 use core_graphics::{Direction, DisplayId, KeyCommand, WindowId};
 use std::collections::HashMap;
 
+#[derive(Default, Copy, Clone, Debug)]
+pub struct Config {
+    pub window_padding: Option<f64>,
+}
+
+impl Config {
+    pub fn must_parse() -> Self {
+        let mut ret = Self::default();
+        let mut args = std::env::args().skip(1);
+
+        while let Some(arg) = args.next() {
+            match arg.as_str() {
+                "--padding" => {
+                    let padding = args
+                        .next()
+                        .expect("expected a usize value after --padding")
+                        .parse::<usize>()
+                        .expect("expected a usize value after --padding");
+                    ret.window_padding = Some(padding as f64);
+                }
+                unknown => {
+                    panic!("{}", format!("unknown argument: {unknown}"));
+                }
+            }
+        }
+
+        ret
+    }
+}
+
 pub(super) struct WindowManager {
     physical_displays: HashMap<DisplayId, PhysicalDisplay>,
     active_physical_display_id: DisplayId,
 }
 
 impl WindowManager {
-    pub(super) fn new() -> Self {
+    pub(super) fn new(config: Config) -> Self {
         // We want a physical display for each display reported by Core Graphics
         let mut physical_displays = HashMap::new();
         // TODO: unwrap
         let detected_physical_displays = core_graphics::Display::all().unwrap();
 
         for (id, display) in detected_physical_displays {
-            let physical = PhysicalDisplay::new(id, display);
+            let physical = PhysicalDisplay::new(id, display, config.into());
             physical_displays.insert(id, physical);
         }
 

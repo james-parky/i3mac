@@ -7,6 +7,7 @@ mod sys_info;
 mod window;
 mod window_manager;
 
+use crate::window_manager::Config;
 use crate::{event_loop::EventLoop, window_manager::WindowManager};
 use core_foundation::{CFRunLoopGetCurrent, CFRunLoopRunInMode, kCFRunLoopDefaultMode};
 use core_graphics::{KeyCommand, KeyboardHandler};
@@ -27,7 +28,8 @@ fn main() {
     unsafe { keyboard.add_to_run_loop(CFRunLoopGetCurrent(), kCFRunLoopDefaultMode) }
         .expect("failed to add keyboard to run loop");
 
-    let mut wm = WindowManager::new();
+    let cfg = Config::must_parse();
+    let mut wm = WindowManager::new(cfg);
     let mut event_loop = EventLoop::new(key_rx);
 
     loop {

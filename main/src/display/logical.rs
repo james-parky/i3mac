@@ -24,14 +24,34 @@ impl From<usize> for LogicalDisplayId {
     }
 }
 
+#[derive(Debug, Copy, Clone)]
+pub struct Config {
+    window_padding: Option<f64>,
+}
+
+impl From<crate::display::physical::Config> for Config {
+    fn from(config: crate::display::physical::Config) -> Self {
+        Self {
+            window_padding: config.window_padding,
+        }
+    }
+}
+
+impl Config {
+    pub fn window_padding(&self) -> f64 {
+        self.window_padding.unwrap_or_default()
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct LogicalDisplay {
     root: Container,
     focused_window: Option<WindowId>,
+    config: Config,
 }
 
 impl LogicalDisplay {
-    pub(crate) fn new(cg_bounds: Bounds) -> Self {
+    pub(crate) fn new(cg_bounds: Bounds, config: Config) -> Self {
         // Core Graphics bounds -- the bounds used for a `PhysicalDisplay` do
         // not include the Apple menu bar; we need to subtract the height of
         // said bar to stop vertical split windows from overlapping each other.
@@ -48,6 +68,7 @@ impl LogicalDisplay {
         LogicalDisplay {
             root: Container::Empty { bounds },
             focused_window: None,
+            config,
         }
     }
 
@@ -135,7 +156,9 @@ impl LogicalDisplay {
     }
 
     pub fn remove_window(&mut self, window_id: WindowId) -> Result<bool> {
-        let removed = self.root.remove_window(window_id)?;
+        let removed = self
+            .root
+            .remove_window(window_id, self.config.window_padding())?;
         if self.focused_window == Some(window_id) {
             self.focused_window = self.window_ids().iter().next().copied();
         }
@@ -161,7 +184,7 @@ impl LogicalDisplay {
         };
 
         self.focused_window = Some(window_id);
-        container.add_window(window)
+        container.add_window(window, self.config.window_padding())
     }
 
     pub fn resize_focused_window(&mut self, direction: Direction) -> Result<()> {
@@ -178,6 +201,11 @@ impl LogicalDisplay {
         direction: Direction,
     ) -> Result<()> {
         const RESIZE_AMOUNT: f64 = 50.0;
-        self.root.resize_window(window_id, direction, RESIZE_AMOUNT)
+        self.root.resize_window(
+            window_id,
+            direction,
+            RESIZE_AMOUNT,
+            self.config.window_padding(),
+        )
     }
 }

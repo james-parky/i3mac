@@ -8,16 +8,30 @@ use container::Axis;
 use core_graphics::{Bounds, Direction, DisplayId, WindowId};
 use std::collections::{HashMap, HashSet};
 
+#[derive(Debug, Copy, Clone)]
+pub struct Config {
+    pub window_padding: Option<f64>,
+}
+
+impl From<crate::window_manager::Config> for Config {
+    fn from(value: crate::window_manager::Config) -> Self {
+        Self {
+            window_padding: value.window_padding,
+        }
+    }
+}
+
 pub(crate) struct PhysicalDisplay {
     bounds: Bounds,
     logical_displays: HashMap<LogicalDisplayId, LogicalDisplay>,
     active_logical_id: LogicalDisplayId,
     status_bar: StatusBar,
+    config: Config,
 }
 
 impl PhysicalDisplay {
-    pub fn new(physical_id: DisplayId, cg_display: core_graphics::Display) -> Self {
-        let mut logical_display = LogicalDisplay::new(cg_display.bounds);
+    pub fn new(physical_id: DisplayId, cg_display: core_graphics::Display, config: Config) -> Self {
+        let mut logical_display = LogicalDisplay::new(cg_display.bounds, config.into());
         for window in cg_display.windows {
             // TODO: handle
             let _ = logical_display.add_window(window);
@@ -44,6 +58,7 @@ impl PhysicalDisplay {
             logical_displays,
             active_logical_id: logical_id,
             status_bar,
+            config,
         }
     }
 
@@ -88,8 +103,10 @@ impl PhysicalDisplay {
     }
 
     pub fn create_logical_display(&mut self, logical_id: LogicalDisplayId) {
-        self.logical_displays
-            .insert(logical_id, LogicalDisplay::new(self.bounds));
+        self.logical_displays.insert(
+            logical_id,
+            LogicalDisplay::new(self.bounds, self.config.into()),
+        );
         self.update_status_bar();
     }
 
