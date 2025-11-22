@@ -155,13 +155,15 @@ impl LogicalDisplay {
         }
     }
 
-    pub fn remove_window(&mut self, window_id: WindowId) -> Result<bool> {
+    pub fn remove_window(&mut self, window_id: WindowId) -> Result<Option<Window>> {
         let removed = self
             .root
             .remove_window(window_id, self.config.window_padding())?;
+
         if self.focused_window == Some(window_id) {
             self.focused_window = self.window_ids().iter().next().copied();
         }
+
         Ok(removed)
     }
 

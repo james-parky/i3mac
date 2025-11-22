@@ -5,7 +5,7 @@ use crate::{
     event_loop::Event,
 };
 use core_graphics::{Direction, DisplayId, KeyCommand, WindowId};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Default, Copy, Clone, Debug)]
 pub struct Config {
@@ -40,6 +40,7 @@ impl Config {
 pub(super) struct WindowManager {
     physical_displays: HashMap<DisplayId, PhysicalDisplay>,
     active_physical_display_id: DisplayId,
+    floating_windows: HashSet<core_graphics::Window>,
 }
 
 impl WindowManager {
@@ -68,13 +69,13 @@ impl WindowManager {
         Self {
             physical_displays,
             active_physical_display_id,
+            floating_windows: HashSet::new(),
         }
     }
 
     pub(super) fn handle_event(&mut self, event: Event) {
         match event {
             Event::WindowAdded { display_id, window } => {
-                println!("Window added: {:?}", display_id);
                 if let Err(e) = self.handle_window_added(display_id, window) {
                     eprintln!("failed to add window: {e:?}");
                 }
@@ -121,14 +122,22 @@ impl WindowManager {
     }
 
     fn handle_window_removed(&mut self, display_id: DisplayId, window_id: WindowId) -> Result<()> {
+        if self
+            .floating_windows
+            .iter()
+            .any(|w| w.number() == window_id)
+        {
+            return Ok(());
+        }
+
         match self
             .physical_displays
             .get_mut(&display_id)
             .ok_or(Error::DisplayNotFound)?
             .remove_window(window_id)?
         {
-            false => Err(Error::CouldNotRemoveWindow),
-            true => Ok(()),
+            None => Err(Error::CouldNotRemoveWindow),
+            Some(_) => Ok(()),
         }
     }
 
@@ -192,7 +201,46 @@ impl WindowManager {
                 }
             }
 
+            KeyCommand::ToggleFloating => {
+                if let Err(e) = self.handle_toggle_floating() {
+                    eprintln!("failed to toggle floating: {e:?}");
+                }
+            }
+
             _ => {}
+        }
+    }
+
+    // To handle toggling a window to be floating:
+    //  1. Get the currently focused window.
+    //  2. If the currently focused window is already floating, add it to the
+    //     active physical display, and mark it as not floating, else remove it
+    //     from the active physical display, and mark it as floating.
+    fn handle_toggle_floating(&mut self) -> Result<()> {
+        let focused_window = ax_ui::Window::try_get_focused().map_err(Error::AxUi)?;
+
+        let cg_window = self
+            .floating_windows
+            .iter()
+            .find(|w| w.number() == focused_window)
+            .cloned();
+
+        if let Some(cg_window) = cg_window {
+            self.floating_windows.remove(&cg_window);
+            self.active_physical_display_mut().add_window(cg_window)
+        } else {
+            let removed = self
+                .active_physical_display_mut()
+                .remove_window(focused_window)?
+                .ok_or(Error::CouldNotRemoveWindow)?;
+
+            // Sanity check
+            if removed.cg().number() != focused_window {
+                panic!("just removed a window that we shouldn't have");
+            }
+
+            self.floating_windows.insert(removed.cg().clone());
+            Ok(())
         }
     }
 
@@ -241,11 +289,12 @@ impl WindowManager {
             })
             .ok_or(Error::WindowNotFound)?;
 
-        if !self
+        if self
             .physical_displays
             .get_mut(&source_physical_display_id)
             .unwrap()
             .remove_window(focused_window)?
+            .is_none()
         {
             return Err(Error::CouldNotRemoveWindow);
         }

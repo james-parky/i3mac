@@ -1,3 +1,4 @@
+use crate::window::Window;
 use crate::{
     container,
     display::{LogicalDisplay, LogicalDisplayId},
@@ -84,7 +85,7 @@ impl PhysicalDisplay {
 
     // When removing a window from a physical display, delegate to the currently
     // active logical display.
-    pub fn remove_window(&mut self, window_id: WindowId) -> Result<bool> {
+    pub fn remove_window(&mut self, window_id: WindowId) -> Result<Option<Window>> {
         self.logical_displays
             .get_mut(&self.active_logical_id)
             .unwrap()

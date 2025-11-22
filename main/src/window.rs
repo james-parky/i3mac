@@ -24,6 +24,8 @@ impl PartialEq for Window {
     }
 }
 
+impl Eq for Window {}
+
 impl Window {
     pub fn bounds(&self) -> &Bounds {
         &self.bounds

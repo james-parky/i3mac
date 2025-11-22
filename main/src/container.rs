@@ -190,14 +190,30 @@ impl Container {
         }
     }
 
-    pub(super) fn remove_window(&mut self, window_id: WindowId, padding: f64) -> Result<bool> {
+    pub(super) fn remove_window(
+        &mut self,
+        window_id: WindowId,
+        padding: f64,
+    ) -> Result<Option<Window>> {
         match self {
-            Self::Empty { .. } => Ok(false),
-            Self::Leaf { window, bounds } if window.cg().number() == window_id => {
-                *self = Self::Empty { bounds: *bounds };
-                Ok(true)
+            Self::Empty { .. } => Ok(None),
+            Self::Leaf { window, .. } => {
+                if window.cg().number() == window_id {
+                    let old = std::mem::replace(
+                        self,
+                        Self::Empty {
+                            bounds: Bounds::default(),
+                        },
+                    );
+                    if let Self::Leaf { window, .. } = old {
+                        Ok(Some(window))
+                    } else {
+                        unreachable!()
+                    }
+                } else {
+                    Ok(None)
+                }
             }
-            Self::Leaf { .. } => Ok(false),
             Self::Split {
                 children,
                 bounds,
@@ -207,7 +223,7 @@ impl Container {
                     matches!(child, Self::Leaf{window,..} if window.cg().number() == window_id)
                 ) {
 
-                    children.remove(i);
+                    let removed_child = children.remove(i);
                     children.retain(|c| !matches!(c, Self::Empty {..}));
                     if children.is_empty() {
                         *self = Self::Empty { bounds: *bounds };
@@ -217,17 +233,17 @@ impl Container {
                             child.resize(new_bounds,padding)?;
                         }
                     }
-                    return Ok(true);
+                    return Ok(Some(match removed_child{Self::Leaf{window,..} => window, _=>unreachable!()}));
                 }
 
                 for child in children.iter_mut() {
-                    if child.remove_window(window_id, padding)? {
+                    if let Some(window) = child.remove_window(window_id, padding)? {
                         children.retain(|c| !matches!(c, Self::Empty { .. }));
-                        return Ok(true);
+                        return Ok(Some(window));
                     }
                 }
 
-                Ok(false)
+                Ok(None)
             }
         }
     }

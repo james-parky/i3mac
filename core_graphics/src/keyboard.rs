@@ -101,6 +101,8 @@ impl<'a> HotKey<'a> {
 
     const VERTICAL_SPLIT: Self = Self::new(&Modifier::CMD_OPTN, Keycode::AnsiV);
     const HORIZONTAL_SPLIT: Self = Self::new(&Modifier::CMD_OPTN, Keycode::AnsiH);
+
+    const TOGGLE_FLOATING: Self = Self::new(&Modifier::CMD_OPTN, Keycode::AnsiC);
 }
 
 #[derive(Debug, Hash, PartialEq, Eq)]
@@ -112,6 +114,7 @@ pub enum Keycode {
     UpArrow = 0x7E,
     AnsiQ = 0x0C,
     AnsiH = 0x04,
+    AnsiC = 0x08,
     AnsiV = 0x09,
     Ansi1 = 0x12,
     Ansi2 = 0x13,
@@ -137,6 +140,7 @@ impl TryFrom<i64> for Keycode {
             0x7E => Ok(Keycode::UpArrow),
             0x0C => Ok(Keycode::AnsiQ),
             0x04 => Ok(Keycode::AnsiH),
+            0x08 => Ok(Keycode::AnsiC),
             0x09 => Ok(Keycode::AnsiV),
             0x12 => Ok(Keycode::Ansi1),
             0x13 => Ok(Keycode::Ansi2),
@@ -172,6 +176,7 @@ pub enum KeyCommand {
     ToggleHorizontalSplit,
     MoveWindow(Direction),
     ResizeWindow(Direction),
+    ToggleFloating,
 }
 
 pub struct KeyboardHandler {
@@ -301,6 +306,8 @@ extern "C" fn event_callback(
 
         HotKey::VERTICAL_SPLIT => Some(KeyCommand::ToggleVerticalSplit),
         HotKey::HORIZONTAL_SPLIT => Some(KeyCommand::ToggleHorizontalSplit),
+
+        HotKey::TOGGLE_FLOATING => Some(KeyCommand::ToggleFloating),
 
         _ => None,
     };
