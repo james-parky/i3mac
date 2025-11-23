@@ -25,7 +25,7 @@ dependencies = [
 
 [[package]]
 name = "foundation"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "core_graphics",
 ]
@@ -38,7 +38,7 @@ checksum = "2874a2af47a2325c2001a6e6fad9b16a53b802102b528163885171cf92b15976"
 
 [[package]]
 name = "main"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "ax_ui",
  "core_foundation",
