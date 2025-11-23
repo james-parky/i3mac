@@ -1,14 +1,11 @@
 use crate::{error::Error, error::Result};
-use ax_ui::{Callback, Observer};
-use core_graphics::{Bounds, CGPoint, CGSize};
-use std::{hash::Hash, rc::Rc};
+use core_graphics::Bounds;
+use std::hash::Hash;
 
 #[derive(Debug)]
 pub(crate) struct Window {
     cg: core_graphics::Window,
     ax: ax_ui::Window,
-    lock_observer: Observer,
-    lock_callback: Callback,
     bounds: Bounds,
 }
 
@@ -47,22 +44,7 @@ impl Window {
             .try_resize(self.bounds.width, self.bounds.height)
             .map_err(Error::AxUi)?;
 
-        unsafe {
-            self.lock_observer
-                .add_notification(
-                    self.ax.window_ref(),
-                    ax_ui::Window::RESIZED_ATTR,
-                    self.lock_callback.ctx,
-                )
-                .map_err(Error::AxUi)?;
-            self.lock_observer
-                .add_notification(
-                    self.ax.window_ref(),
-                    ax_ui::Window::MOVED_ATTR,
-                    self.lock_callback.ctx,
-                )
-                .map_err(Error::AxUi)
-        }
+        Ok(())
     }
 
     pub(crate) fn try_new(cg_window: core_graphics::Window, bounds: Bounds) -> Result<Self> {
@@ -71,71 +53,15 @@ impl Window {
         ax_window.unminimise().map_err(Error::AxUi)?;
         ax_window.try_focus().map_err(Error::AxUi)?;
 
-        let lock_callback = Window::lock_callback(ax_window.clone(), bounds);
-        let observer =
-            Observer::try_new(cg_window.owner_pid(), &lock_callback).map_err(Error::AxUi)?;
-
-        observer.run();
-
         Ok(Self {
             cg: cg_window,
             ax: ax_window,
-            lock_observer: observer,
-            lock_callback,
             bounds,
-        })
-    }
-
-    fn lock_callback(ax: ax_ui::Window, bounds: Bounds) -> Callback {
-        let context = LockContext {
-            window: Rc::new(ax),
-            point: bounds.point(),
-            size: bounds.size(),
-        };
-
-        Callback::new(context, |ctx| {
-            // TODO: logging
-            let _ = ctx.window.try_resize(ctx.size.width, ctx.size.height);
-            let _ = ctx.window.try_move_to(ctx.point.x, ctx.point.y);
         })
     }
 
     pub fn update_bounds(&mut self, new_bounds: Bounds) -> Result<()> {
         self.bounds = new_bounds;
-
-        unsafe {
-            let _ = self
-                .lock_observer
-                .remove_notification(self.ax.window_ref(), ax_ui::Window::RESIZED_ATTR)
-                .map_err(Error::AxUi);
-
-            let _ = self
-                .lock_observer
-                .remove_notification(self.ax.window_ref(), ax_ui::Window::MOVED_ATTR)
-                .map_err(Error::AxUi);
-        }
-
-        let new_callback = Self::lock_callback(self.ax().clone(), new_bounds);
-        let old_callback = std::mem::replace(&mut self.lock_callback, new_callback);
-        drop(old_callback);
-
-        unsafe {
-            self.lock_observer
-                .add_notification(
-                    self.ax.window_ref(),
-                    ax_ui::Window::RESIZED_ATTR,
-                    self.lock_callback.ctx,
-                )
-                .map_err(Error::AxUi)?;
-
-            self.lock_observer
-                .add_notification(
-                    self.ax.window_ref(),
-                    ax_ui::Window::MOVED_ATTR,
-                    self.lock_callback.ctx,
-                )
-                .map_err(Error::AxUi)?;
-        }
 
         self.ax
             .try_move_to(new_bounds.x, new_bounds.y)
@@ -146,10 +72,4 @@ impl Window {
 
         Ok(())
     }
-}
-
-struct LockContext {
-    window: Rc<ax_ui::Window>,
-    point: CGPoint,
-    size: CGSize,
 }

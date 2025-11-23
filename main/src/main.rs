@@ -38,6 +38,7 @@ fn main() {
         for event in event_loop.poll() {
             wm.handle_event(event);
         }
+        wm.reset_windows();
     }
 }
 

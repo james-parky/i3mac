@@ -73,6 +73,19 @@ impl WindowManager {
         }
     }
 
+    pub(super) fn reset_windows(&mut self) {
+        for display in self.physical_displays.values_mut() {
+            for window in display.windows_mut() {
+                if let Err(e) = window.update_bounds(*window.bounds()) {
+                    eprintln!(
+                        "could not set window {:?} back to designated size and location: {e:?}",
+                        window.cg().number()
+                    );
+                }
+            }
+        }
+    }
+
     pub(super) fn handle_event(&mut self, event: Event) {
         match event {
             Event::WindowAdded { display_id, window } => {

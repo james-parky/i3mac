@@ -92,6 +92,16 @@ impl PhysicalDisplay {
             .remove_window(window_id)
     }
 
+    pub fn windows_mut(&mut self) -> HashSet<&mut Window> {
+        let mut all_windows: HashSet<&mut Window> = HashSet::new();
+
+        for ld in self.logical_displays.values_mut() {
+            all_windows.extend(ld.windows_mut());
+        }
+
+        all_windows
+    }
+
     pub fn split(&mut self, direction: Axis) -> Result<()> {
         self.logical_displays
             .get_mut(&self.active_logical_id)

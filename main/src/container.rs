@@ -191,6 +191,17 @@ impl Container {
         }
     }
 
+    pub(super) fn windows_mut(&mut self) -> HashSet<&mut Window> {
+        match self {
+            Self::Empty { .. } => HashSet::new(),
+            Self::Leaf { window, .. } => HashSet::from([window]),
+            Self::Split { children, .. } => children
+                .iter_mut()
+                .flat_map(|child| child.windows_mut())
+                .collect(),
+        }
+    }
+
     fn remove_window_from_leaf(&mut self, window_id: WindowId) -> Result<Option<Window>> {
         if let Self::Leaf { window, .. } = self {
             if window.cg().number() == window_id {

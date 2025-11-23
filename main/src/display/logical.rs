@@ -134,6 +134,10 @@ impl LogicalDisplay {
         self.root.window_ids()
     }
 
+    pub(crate) fn windows_mut(&mut self) -> HashSet<&mut Window> {
+        self.root.windows_mut()
+    }
+
     pub fn find_window(&self, window_id: WindowId) -> Option<&Window> {
         self.root.find_window(window_id)
     }
