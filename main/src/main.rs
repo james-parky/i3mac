@@ -7,10 +7,10 @@ mod sys_info;
 mod window;
 mod window_manager;
 
-use crate::window_manager::Config;
-use crate::{event_loop::EventLoop, window_manager::WindowManager};
+use crate::{event_loop::EventLoop, window_manager::Config, window_manager::WindowManager};
 use core_foundation::{CFRunLoopGetCurrent, CFRunLoopRunInMode, kCFRunLoopDefaultMode};
 use core_graphics::{KeyCommand, KeyboardHandler};
+use foundation::{WorkspaceEvent, WorkspaceObserver};
 use std::sync::mpsc::channel;
 
 fn main() {
@@ -28,6 +28,9 @@ fn main() {
     unsafe { keyboard.add_to_run_loop(CFRunLoopGetCurrent(), kCFRunLoopDefaultMode) }
         .expect("failed to add keyboard to run loop");
 
+    let (workspace_tx, workspace_rx) = channel::<WorkspaceEvent>();
+    let _workspace_observer = WorkspaceObserver::new(workspace_tx);
+
     let cfg = Config::must_parse();
     let mut wm = WindowManager::new(cfg);
     let mut event_loop = EventLoop::new(key_rx);
@@ -35,10 +38,22 @@ fn main() {
     loop {
         unsafe { CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.1, false) }
 
-        for event in event_loop.poll() {
+        let mut should_poll_windows = false;
+        if let Ok(_event) = workspace_rx.try_recv() {
+            should_poll_windows = true;
+        }
+
+        if should_poll_windows {
+            for event in event_loop.poll_windows() {
+                wm.handle_event(event);
+            }
+        }
+
+        wm.reset_windows();
+
+        for event in event_loop.poll_keyboard() {
             wm.handle_event(event);
         }
-        wm.reset_windows();
     }
 }
 

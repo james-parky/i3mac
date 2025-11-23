@@ -1,6 +1,7 @@
 use core_graphics::{DisplayId, KeyCommand, WindowId};
 use std::collections::{HashMap, HashSet};
 
+#[derive(Debug)]
 pub(super) enum Event {
     WindowAdded {
         display_id: DisplayId,
@@ -38,7 +39,16 @@ impl EventLoop {
         }
     }
 
-    pub(super) fn poll(&mut self) -> Vec<Event> {
+    pub(super) fn poll_keyboard(&mut self) -> Vec<Event> {
+        let mut events = Vec::new();
+        while let Ok(command) = self.keyboard_rx.try_recv() {
+            events.push(Event::KeyCommand { command })
+        }
+
+        events
+    }
+
+    pub(super) fn poll_windows(&mut self) -> Vec<Event> {
         let mut events = Vec::new();
 
         if let Ok(focused_window_id) = ax_ui::Window::try_get_focused() {
@@ -85,10 +95,6 @@ impl EventLoop {
                     }
                 }
             }
-        }
-
-        while let Ok(command) = self.keyboard_rx.try_recv() {
-            events.push(Event::KeyCommand { command })
         }
 
         events

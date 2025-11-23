@@ -1,11 +1,14 @@
 mod bits;
 mod label;
+mod observer;
 mod window;
 
-use bits::{objc_getClass, sel_registerName};
 pub use label::Label;
-use std::{ffi::CString, os::raw::c_void};
+pub use observer::{WorkspaceEvent, WorkspaceObserver};
 pub use window::{Application, Window};
+
+use bits::{objc_getClass, sel_registerName};
+use std::{ffi::CString, os::raw::c_void};
 
 #[macro_export]
 macro_rules! msg_send {

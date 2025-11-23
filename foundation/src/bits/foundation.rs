@@ -5,7 +5,9 @@ use std::os::raw::{c_char, c_void};
 // are of type "framework", but we need them both.
 #[allow(clippy::duplicated_attributes)]
 #[link(name = "Foundation", kind = "framework")]
-unsafe extern "C" {}
+unsafe extern "C" {
+    pub static _NSConcreteStackBlock: *const c_void;
+}
 
 #[link(name = "objc")]
 unsafe extern "C" {
