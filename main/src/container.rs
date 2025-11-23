@@ -91,7 +91,7 @@ impl Container {
             new_window.init()?;
 
             children.push(Container::Leaf {
-                bounds: *bounds,
+                bounds: window_bounds,
                 window: new_window,
             });
 
