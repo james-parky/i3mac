@@ -14,7 +14,7 @@ pub(crate) struct LogicalDisplayId(pub usize);
 
 impl std::fmt::Display for LogicalDisplayId {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}", self.0)
+        write!(f, "LD{}", self.0)
     }
 }
 

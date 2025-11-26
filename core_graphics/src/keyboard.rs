@@ -11,6 +11,7 @@ use core_foundation::{
     CFMachPortCreateRunLoopSource, CFMachPortRef, CFRelease, CFRunLoopAddSource, CFRunLoopMode,
     CFRunLoopRef, CFTypeRef,
 };
+use std::fmt::Display;
 use std::{ffi::c_void, sync::mpsc::Sender};
 
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -163,6 +164,17 @@ pub enum Direction {
     Right,
     Up,
     Down,
+}
+
+impl Display for Direction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Direction::Left => f.write_str("Left"),
+            Direction::Right => f.write_str("Right"),
+            Direction::Up => f.write_str("Up"),
+            Direction::Down => f.write_str("Down"),
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone)]

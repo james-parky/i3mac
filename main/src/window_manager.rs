@@ -1,3 +1,8 @@
+use crate::log::Message::{
+    FocusLogicalDisplayKeyCommand, MoveFocusedWindowToLogicalDisplayKeyCommand,
+    OpenTerminalKeyCommand, ResizeWindowInDirectionKeyCommand, ShiftFocusInDirectionKeyCommand,
+    ToggleHorizontalSplitKeyCommand, ToggleVerticalSplitKeyCommand, ToggleWindowFloatingKeyCommand,
+};
 use crate::{
     container,
     display::{LogicalDisplayId, PhysicalDisplay},
@@ -36,19 +41,12 @@ impl Config {
                     ret.window_padding = Some(padding as f64);
                 }
                 "--log-level" => {
-                    let level = match args
+                    let level: Level = args
                         .next()
                         .expect("expected one of {info, warn, error, trace}  after --log-level")
                         .as_str()
-                    {
-                        "info" => Level::Info,
-                        "warn" => Level::Warn,
-                        "error" => Level::Error,
-                        "trace" => Level::Trace,
-                        _ => panic!(
-                            "expected one of {{info, warn, error, trace}}  after --log-level"
-                        ),
-                    };
+                        .try_into()
+                        .expect("expected one of {info, warn, error, trace}  after --log-level");
                     ret.log_level = level;
                 }
                 unknown => {
@@ -76,7 +74,7 @@ impl WindowManager {
         let detected_physical_displays = core_graphics::Display::all().unwrap();
 
         for (id, display) in detected_physical_displays {
-            let physical = PhysicalDisplay::new(id, display, config.into());
+            let physical = PhysicalDisplay::new(id.into(), display, config.into());
             physical_displays.insert(id, physical);
         }
 
@@ -211,6 +209,7 @@ impl WindowManager {
     fn handle_key_command(&mut self, command: KeyCommand) {
         match command {
             KeyCommand::NewTerminal => {
+                OpenTerminalKeyCommand.log(&mut self.logger);
                 open_terminal();
             }
             KeyCommand::CloseWindow => {
@@ -219,16 +218,20 @@ impl WindowManager {
                 // }
             }
             KeyCommand::Focus(direction) => {
+                ShiftFocusInDirectionKeyCommand(direction).log(&mut self.logger);
                 if let Err(e) = self.handle_focus_shift(direction) {
                     println!("Failed to shift focus: {:?}", e);
                 }
             }
             KeyCommand::FocusDisplay(display_id) => {
+                FocusLogicalDisplayKeyCommand(display_id.into()).log(&mut self.logger);
                 if let Err(e) = self.handle_focus_logical_display(display_id.into()) {
                     eprintln!("failed to focus display: {e:?}");
                 }
             }
             KeyCommand::MoveWindowToDisplay(n) => {
+                MoveFocusedWindowToLogicalDisplayKeyCommand((n as usize).into())
+                    .log(&mut self.logger);
                 if let Err(e) = self.handle_move_focused_window_to_display((n as usize).into()) {
                     println!("Failed to move window: {:?}", e);
                 }
@@ -243,22 +246,26 @@ impl WindowManager {
             //     // }
             // }
             KeyCommand::ToggleVerticalSplit => {
+                ToggleVerticalSplitKeyCommand.log(&mut self.logger);
                 if let Err(e) = self.handle_split(container::Axis::Vertical) {
                     eprintln!("failed to split container vertically: {e:?}");
                 }
             }
             KeyCommand::ToggleHorizontalSplit => {
+                ToggleHorizontalSplitKeyCommand.log(&mut self.logger);
                 if let Err(e) = self.handle_split(container::Axis::Horizontal) {
                     eprintln!("failed to split container horizontally: {e:?}");
                 }
             }
             KeyCommand::ResizeWindow(direction) => {
+                ResizeWindowInDirectionKeyCommand(direction).log(&mut self.logger);
                 if let Err(e) = self.handle_resize(direction) {
                     eprintln!("failed to resize window: {e:?}");
                 }
             }
 
             KeyCommand::ToggleFloating => {
+                ToggleWindowFloatingKeyCommand.log(&mut self.logger);
                 if let Err(e) = self.handle_toggle_floating() {
                     eprintln!("failed to toggle floating: {e:?}");
                 }

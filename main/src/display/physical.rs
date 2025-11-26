@@ -9,6 +9,21 @@ use container::Axis;
 use core_graphics::{Bounds, Direction, DisplayId, WindowId};
 use std::collections::{HashMap, HashSet};
 
+#[derive(Debug, PartialEq, Eq, Copy, Clone, Hash, Ord, PartialOrd)]
+pub(crate) struct PhysicalDisplayId(pub usize);
+
+impl std::fmt::Display for PhysicalDisplayId {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "PD{}", self.0)
+    }
+}
+
+impl From<DisplayId> for PhysicalDisplayId {
+    fn from(id: DisplayId) -> Self {
+        Self(usize::from(id))
+    }
+}
+
 #[derive(Debug, Copy, Clone)]
 pub struct Config {
     pub window_padding: Option<f64>,
@@ -31,14 +46,18 @@ pub(crate) struct PhysicalDisplay {
 }
 
 impl PhysicalDisplay {
-    pub fn new(physical_id: DisplayId, cg_display: core_graphics::Display, config: Config) -> Self {
+    pub fn new(
+        physical_id: PhysicalDisplayId,
+        cg_display: core_graphics::Display,
+        config: Config,
+    ) -> Self {
         let mut logical_display = LogicalDisplay::new(cg_display.bounds, config.into());
         for window in cg_display.windows {
             // TODO: handle
             let _ = logical_display.add_window(window);
         }
 
-        let logical_id = LogicalDisplayId(usize::from(physical_id));
+        let logical_id = LogicalDisplayId(physical_id.0);
 
         let mut logical_displays = HashMap::new();
         logical_displays.insert(logical_id, logical_display);
