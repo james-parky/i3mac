@@ -1,4 +1,5 @@
 use core_foundation::CFArrayRef;
+use std::fmt::Display;
 use std::{
     ffi::c_uint,
     hash::{Hash, Hasher},
@@ -12,6 +13,12 @@ pub struct WindowId(c_uint);
 impl WindowId {
     /// A guaranteed invalid window ID.
     pub const NULL: Self = Self(0);
+}
+
+impl Display for WindowId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
 }
 
 impl Hash for WindowId {

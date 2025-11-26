@@ -3,13 +3,21 @@ use crate::{
     display::{LogicalDisplayId, PhysicalDisplay},
     error::{Error, Result},
     event_loop::Event,
+    log,
+    log::Message::{
+        ReceivedKeyCommand, ReceivedWindowAddedEvent, ReceivedWindowFocusedEvent,
+        ReceivedWindowRemovedEvent, WindowFocused,
+    },
+    log::{Level, Log, Logger},
 };
 use core_graphics::{Direction, DisplayId, KeyCommand, WindowId};
+use log::Message::{WindowAdded, WindowRemoved};
 use std::collections::{HashMap, HashSet};
 
 #[derive(Default, Copy, Clone, Debug)]
 pub struct Config {
     pub window_padding: Option<f64>,
+    log_level: Level,
 }
 
 impl Config {
@@ -27,6 +35,22 @@ impl Config {
                         .expect("expected a usize value after --padding");
                     ret.window_padding = Some(padding as f64);
                 }
+                "--log-level" => {
+                    let level = match args
+                        .next()
+                        .expect("expected one of {info, warn, error, trace}  after --log-level")
+                        .as_str()
+                    {
+                        "info" => Level::Info,
+                        "warn" => Level::Warn,
+                        "error" => Level::Error,
+                        "trace" => Level::Trace,
+                        _ => panic!(
+                            "expected one of {{info, warn, error, trace}}  after --log-level"
+                        ),
+                    };
+                    ret.log_level = level;
+                }
                 unknown => {
                     panic!("{}", format!("unknown argument: {unknown}"));
                 }
@@ -41,6 +65,7 @@ pub(super) struct WindowManager {
     physical_displays: HashMap<DisplayId, PhysicalDisplay>,
     active_physical_display_id: DisplayId,
     floating_windows: HashSet<core_graphics::Window>,
+    logger: Logger,
 }
 
 impl WindowManager {
@@ -66,10 +91,14 @@ impl WindowManager {
             .unwrap()
             .focus();
 
+        let logger =
+            Logger::try_new("/tmp/i3mac.log", config.log_level).expect("failed to create logger");
+
         Self {
             physical_displays,
             active_physical_display_id,
             floating_windows: HashSet::new(),
+            logger,
         }
     }
 
@@ -89,6 +118,8 @@ impl WindowManager {
     pub(super) fn handle_event(&mut self, event: Event) {
         match event {
             Event::WindowAdded { display_id, window } => {
+                ReceivedWindowAddedEvent(display_id, window.number()).log(&mut self.logger);
+
                 if let Err(e) = self.handle_window_added(display_id, window) {
                     eprintln!("failed to add window: {e:?}");
                 }
@@ -99,11 +130,15 @@ impl WindowManager {
                 display_id,
                 window_id,
             } => {
+                ReceivedWindowRemovedEvent(display_id, window_id).log(&mut self.logger);
+
                 if let Err(e) = self.handle_window_removed(display_id, window_id) {
                     eprintln!("failed to remove window: {e:?}");
                 }
             }
             Event::WindowFocused { window_id } => {
+                ReceivedWindowFocusedEvent(window_id).log(&mut self.logger);
+
                 self.handle_window_focused(window_id);
             }
             // Event::DisplayAdded {
@@ -113,6 +148,8 @@ impl WindowManager {
             //     self.handle_display_added(display_id, display);
             // }
             Event::KeyCommand { command } => {
+                ReceivedKeyCommand(command).log(&mut self.logger);
+
                 self.handle_key_command(command);
             }
             _ => {}
@@ -128,10 +165,15 @@ impl WindowManager {
         display_id: DisplayId,
         cg_window: core_graphics::Window,
     ) -> Result<()> {
+        let window_id = cg_window.number();
+
         self.physical_displays
             .get_mut(&display_id)
             .ok_or(Error::DisplayNotFound)?
-            .add_window(cg_window)
+            .add_window(cg_window)?;
+
+        WindowAdded(display_id, self.active_logical_display_id(), window_id).log(&mut self.logger);
+        Ok(())
     }
 
     fn handle_window_removed(&mut self, display_id: DisplayId, window_id: WindowId) -> Result<()> {
@@ -143,15 +185,15 @@ impl WindowManager {
             return Ok(());
         }
 
-        match self
-            .physical_displays
+        self.physical_displays
             .get_mut(&display_id)
             .ok_or(Error::DisplayNotFound)?
-            .remove_window(window_id)?
-        {
-            None => Err(Error::CouldNotRemoveWindow),
-            Some(_) => Ok(()),
-        }
+            .remove_window(window_id)?;
+
+        WindowRemoved(display_id, self.active_logical_display_id(), window_id)
+            .log(&mut self.logger);
+
+        Ok(())
     }
 
     fn handle_window_focused(&mut self, window_id: WindowId) {
@@ -162,6 +204,8 @@ impl WindowManager {
         {
             self.active_physical_display_id = *id;
         }
+
+        WindowFocused(window_id).log(&mut self.logger);
     }
 
     fn handle_key_command(&mut self, command: KeyCommand) {
@@ -399,6 +443,13 @@ impl WindowManager {
         self.physical_displays
             .get_mut(&self.active_physical_display_id)
             .unwrap()
+    }
+
+    fn active_logical_display_id(&self) -> LogicalDisplayId {
+        self.physical_displays
+            .get(&self.active_physical_display_id)
+            .unwrap()
+            .active_logical_id()
     }
 }
 

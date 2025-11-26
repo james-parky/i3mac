@@ -83,6 +83,10 @@ impl PhysicalDisplay {
             .add_window(cg_window)
     }
 
+    pub fn active_logical_id(&self) -> LogicalDisplayId {
+        self.active_logical_id
+    }
+
     // When removing a window from a physical display, delegate to the currently
     // active logical display.
     pub fn remove_window(&mut self, window_id: WindowId) -> Result<Option<Window>> {

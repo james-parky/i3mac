@@ -165,7 +165,7 @@ pub enum Direction {
     Down,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum KeyCommand {
     NewTerminal,
     CloseWindow,
