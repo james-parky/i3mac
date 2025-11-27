@@ -1,7 +1,10 @@
 use crate::log::Message::{
-    FocusLogicalDisplayKeyCommand, MoveFocusedWindowToLogicalDisplayKeyCommand,
-    OpenTerminalKeyCommand, ResizeWindowInDirectionKeyCommand, ShiftFocusInDirectionKeyCommand,
+    FocusLogicalDisplayKeyCommand, FocusedLogicalDisplay,
+    MoveFocusedWindowToLogicalDisplayKeyCommand, OpenTerminalKeyCommand,
+    ResizeWindowInDirectionKeyCommand, ShiftFocusInDirectionKeyCommand,
     ToggleHorizontalSplitKeyCommand, ToggleVerticalSplitKeyCommand, ToggleWindowFloatingKeyCommand,
+    WindowMadeFloating, WindowMadeManaged, WindowMovedToLogicalDisplay, WindowResized,
+    WindowSplitAlongAxis,
 };
 use crate::{
     container,
@@ -291,7 +294,8 @@ impl WindowManager {
 
         if let Some(cg_window) = cg_window {
             self.floating_windows.remove(&cg_window);
-            self.active_physical_display_mut().add_window(cg_window)
+            self.active_physical_display_mut().add_window(cg_window)?;
+            WindowMadeManaged(focused_window).log(&mut self.logger);
         } else {
             let removed = self
                 .active_physical_display_mut()
@@ -304,20 +308,27 @@ impl WindowManager {
             }
 
             self.floating_windows.insert(removed.cg().clone());
-            Ok(())
+            WindowMadeFloating(focused_window).log(&mut self.logger);
         }
+
+        Ok(())
     }
 
     fn handle_resize(&mut self, direction: Direction) -> Result<()> {
+        let focused_window = ax_ui::Window::try_get_focused().map_err(Error::AxUi)?;
+        WindowResized(focused_window, direction).log(&mut self.logger);
         self.active_physical_display_mut()
             .resize_focused_window(direction)
     }
 
-    fn handle_split(&mut self, direction: container::Axis) -> Result<()> {
-        self.active_physical_display_mut().split(direction)
+    fn handle_split(&mut self, axis: container::Axis) -> Result<()> {
+        let focused_window = ax_ui::Window::try_get_focused().map_err(Error::AxUi)?;
+        WindowSplitAlongAxis(focused_window, axis).log(&mut self.logger);
+        self.active_physical_display_mut().split(axis)
     }
 
     fn handle_focus_shift(&mut self, direction: Direction) -> Result<()> {
+        ShiftFocusInDirectionKeyCommand(direction).log(&mut self.logger);
         self.active_physical_display_mut().shift_focus(direction)
     }
 
@@ -381,6 +392,8 @@ impl WindowManager {
             .unwrap()
             .add_window_to_logical(cg_window, target_logical_display_id)?;
 
+        WindowMovedToLogicalDisplay(focused_window, target_logical_display_id)
+            .log(&mut self.logger);
         Ok(())
     }
 
@@ -420,6 +433,7 @@ impl WindowManager {
             }
         }
 
+        FocusedLogicalDisplay(logical_id).log(&mut self.logger);
         Ok(())
     }
 
