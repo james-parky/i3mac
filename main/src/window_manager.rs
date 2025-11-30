@@ -1,3 +1,4 @@
+use crate::event_loop::EventLoop;
 use crate::log::Message::{
     FocusLogicalDisplayKeyCommand, FocusedLogicalDisplay,
     MoveFocusedWindowToLogicalDisplayKeyCommand, OpenTerminalKeyCommand,
@@ -18,9 +19,12 @@ use crate::{
     },
     log::{Level, Log, Logger},
 };
-use core_graphics::{Direction, DisplayId, KeyCommand, WindowId};
+use core_foundation::{CFRunLoopGetCurrent, CFRunLoopRunInMode, kCFRunLoopDefaultMode};
+use core_graphics::{Direction, DisplayId, KeyCommand, KeyboardHandler, WindowId};
+use foundation::{WorkspaceEvent, WorkspaceObserver};
 use log::Message::{WindowAdded, WindowRemoved};
 use std::collections::{HashMap, HashSet};
+use std::sync::mpsc::{Receiver, channel};
 
 #[derive(Default, Copy, Clone, Debug)]
 pub struct Config {
@@ -93,13 +97,53 @@ impl WindowManager {
             .focus();
 
         let logger =
-            Logger::try_new("/tmp/i3mac.log", config.log_level).expect("failed to create logger");
+            Logger::try_new("/dev/stdout", config.log_level).expect("failed to create logger");
 
         Self {
             physical_displays,
             active_physical_display_id,
             floating_windows: HashSet::new(),
             logger,
+        }
+    }
+
+    pub(super) fn run(&mut self) -> Result<()> {
+        let (key_tx, key_rx) = channel::<KeyCommand>();
+        let keyboard = KeyboardHandler::new(key_tx).expect("failed to create keyboard handler");
+
+        let mut event_loop = EventLoop::new(key_rx);
+
+        // Safety:
+        //  - The `run_loop` supplied to `KeyboardHandler::add_run_loop()` is valid
+        //    as it was returned by the library function `CFRunLoopGetCurrent()`.
+        unsafe { keyboard.add_to_run_loop(CFRunLoopGetCurrent(), kCFRunLoopDefaultMode) }
+            .expect("failed to add keyboard to run loop");
+
+        let (workspace_tx, workspace_rx) = channel::<WorkspaceEvent>();
+        let _workspace_observer = WorkspaceObserver::new(workspace_tx);
+        loop {
+            unsafe { CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.1, false) }
+
+            let mut should_poll_windows = false;
+            if let Ok(_event) = workspace_rx.try_recv() {
+                should_poll_windows = true;
+            }
+
+            let keyboard_events = event_loop.poll_keyboard();
+            if !keyboard_events.is_empty() {
+                should_poll_windows = true;
+                for event in keyboard_events {
+                    self.handle_event(event);
+                }
+            }
+
+            if should_poll_windows {
+                for event in event_loop.poll_windows() {
+                    self.handle_event(event);
+                }
+            }
+
+            self.reset_windows();
         }
     }
 
@@ -173,7 +217,12 @@ impl WindowManager {
             .ok_or(Error::DisplayNotFound)?
             .add_window(cg_window)?;
 
-        WindowAdded(display_id, self.active_logical_display_id(), window_id).log(&mut self.logger);
+        WindowAdded(
+            display_id.into(),
+            self.active_logical_display_id(),
+            window_id,
+        )
+        .log(&mut self.logger);
         Ok(())
     }
 
@@ -191,8 +240,12 @@ impl WindowManager {
             .ok_or(Error::DisplayNotFound)?
             .remove_window(window_id)?;
 
-        WindowRemoved(display_id, self.active_logical_display_id(), window_id)
-            .log(&mut self.logger);
+        WindowRemoved(
+            display_id.into(),
+            self.active_logical_display_id(),
+            window_id,
+        )
+        .log(&mut self.logger);
 
         Ok(())
     }

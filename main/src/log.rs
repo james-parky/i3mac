@@ -1,3 +1,4 @@
+use crate::display::PhysicalDisplayId;
 use crate::{container::Axis, display::LogicalDisplayId};
 use core_graphics::{Direction, DisplayId, KeyCommand, WindowId};
 use std::{
@@ -85,8 +86,8 @@ pub enum Message {
     ReceivedWindowFocusedEvent(WindowId),
     ReceivedKeyCommand(KeyCommand),
 
-    WindowAdded(DisplayId, LogicalDisplayId, WindowId),
-    WindowRemoved(DisplayId, LogicalDisplayId, WindowId),
+    WindowAdded(PhysicalDisplayId, LogicalDisplayId, WindowId),
+    WindowRemoved(PhysicalDisplayId, LogicalDisplayId, WindowId),
     WindowFocused(WindowId),
     WindowMadeFloating(WindowId),
     WindowMadeManaged(WindowId),
