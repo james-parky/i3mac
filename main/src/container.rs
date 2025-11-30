@@ -540,16 +540,16 @@ fn spread_bounds_in_direction(
         Axis::Vertical => {
             let total_gap = (2.0 * padding) + ((n - 1) as f64 * padding);
             let available_height = original.height - total_gap;
-            let child_width = available_height / (n as f64);
+            let child_height = available_height / (n as f64);
 
             (0..n)
                 .map(|i| {
-                    let y = original.y + padding + (i as f64 * (child_width + padding));
+                    let y = original.y + padding + (i as f64 * (child_height + padding));
                     Bounds {
                         x: original.x + padding,
-                        width: child_width,
+                        width: original.width - (2.0 * padding),
                         y,
-                        height: original.height - (2.0 * padding),
+                        height: child_height,
                     }
                 })
                 .collect()
