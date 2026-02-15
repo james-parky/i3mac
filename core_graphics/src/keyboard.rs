@@ -166,6 +166,17 @@ pub enum Direction {
     Down,
 }
 
+impl Direction {
+    pub fn opposite(self) -> Direction {
+        match self {
+            Direction::Left => Direction::Right,
+            Direction::Right => Direction::Left,
+            Direction::Up => Direction::Down,
+            Direction::Down => Direction::Up,
+        }
+    }
+}
+
 impl Display for Direction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

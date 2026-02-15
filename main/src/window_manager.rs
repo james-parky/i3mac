@@ -7,6 +7,7 @@ use crate::log::Message::{
     WindowMadeFloating, WindowMadeManaged, WindowMovedToLogicalDisplay, WindowResized,
     WindowSplitAlongAxis,
 };
+use crate::window::Window;
 use crate::{
     container,
     display::{LogicalDisplayId, PhysicalDisplay},
@@ -69,6 +70,7 @@ impl Config {
 pub(super) struct WindowManager {
     physical_displays: HashMap<DisplayId, PhysicalDisplay>,
     active_physical_display_id: DisplayId,
+    windows: HashMap<WindowId, Window>,
     floating_windows: HashSet<core_graphics::Window>,
     logger: Logger,
 }
@@ -79,8 +81,14 @@ impl WindowManager {
         let mut physical_displays = HashMap::new();
         // TODO: unwrap
         let detected_physical_displays = core_graphics::Display::all().unwrap();
+        let mut windows = HashMap::new();
 
         for (id, display) in detected_physical_displays {
+            for w in &display.windows {
+                let window = Window::try_new(w.clone(), *w.bounds()).unwrap();
+                windows.insert(w.number(), window);
+            }
+
             let physical = PhysicalDisplay::new(id.into(), display, config.into());
             physical_displays.insert(id, physical);
         }
@@ -90,12 +98,6 @@ impl WindowManager {
         // TODO: horrible error on not detecting any displays
         let active_physical_display_id = core_graphics::Display::main_display();
 
-        // TODO: error
-        let _ = physical_displays
-            .get(&active_physical_display_id)
-            .unwrap()
-            .focus();
-
         let logger =
             Logger::try_new("/dev/stdout", config.log_level).expect("failed to create logger");
 
@@ -103,6 +105,7 @@ impl WindowManager {
             physical_displays,
             active_physical_display_id,
             floating_windows: HashSet::new(),
+            windows,
             logger,
         }
     }
@@ -143,22 +146,22 @@ impl WindowManager {
                 }
             }
 
-            self.reset_windows();
+            // self.reset_windows();
         }
     }
 
-    pub(super) fn reset_windows(&mut self) {
-        for display in self.physical_displays.values_mut() {
-            for window in display.windows_mut() {
-                if let Err(e) = window.update_bounds(*window.bounds()) {
-                    eprintln!(
-                        "could not set window {:?} back to designated size and location: {e:?}",
-                        window.cg().number()
-                    );
-                }
-            }
-        }
-    }
+    // pub(super) fn reset_windows(&mut self) {
+    //     for display in self.physical_displays.values_mut() {
+    //         for window in display.windows_mut() {
+    //             if let Err(e) = window.update_bounds(*window.bounds()) {
+    //                 eprintln!(
+    //                     "could not set window {:?} back to designated size and location: {e:?}",
+    //                     window.cg().number()
+    //                 );
+    //             }
+    //         }
+    //     }
+    // }
 
     pub(super) fn handle_event(&mut self, event: Event) {
         match event {
@@ -211,11 +214,13 @@ impl WindowManager {
         cg_window: core_graphics::Window,
     ) -> Result<()> {
         let window_id = cg_window.number();
+        let window = Window::try_new(cg_window.clone(), *cg_window.bounds())?;
+        self.windows.insert(window_id, window);
 
         self.physical_displays
             .get_mut(&display_id)
             .ok_or(Error::DisplayNotFound)?
-            .add_window(cg_window)?;
+            .add_window(window_id)?;
 
         WindowAdded(
             display_id.into(),
@@ -227,6 +232,8 @@ impl WindowManager {
     }
 
     fn handle_window_removed(&mut self, display_id: DisplayId, window_id: WindowId) -> Result<()> {
+        self.windows.remove(&window_id);
+
         if self
             .floating_windows
             .iter()
@@ -320,13 +327,12 @@ impl WindowManager {
                 }
             }
 
-            KeyCommand::ToggleFloating => {
-                ToggleWindowFloatingKeyCommand.log(&mut self.logger);
-                if let Err(e) = self.handle_toggle_floating() {
-                    eprintln!("failed to toggle floating: {e:?}");
-                }
-            }
-
+            // KeyCommand::ToggleFloating => {
+            //     ToggleWindowFloatingKeyCommand.log(&mut self.logger);
+            //     if let Err(e) = self.handle_toggle_floating() {
+            //         eprintln!("failed to toggle floating: {e:?}");
+            //     }
+            // }
             _ => {}
         }
     }
@@ -336,36 +342,36 @@ impl WindowManager {
     //  2. If the currently focused window is already floating, add it to the
     //     active physical display, and mark it as not floating, else remove it
     //     from the active physical display, and mark it as floating.
-    fn handle_toggle_floating(&mut self) -> Result<()> {
-        let focused_window = ax_ui::Window::try_get_focused().map_err(Error::AxUi)?;
-
-        let cg_window = self
-            .floating_windows
-            .iter()
-            .find(|w| w.number() == focused_window)
-            .cloned();
-
-        if let Some(cg_window) = cg_window {
-            self.floating_windows.remove(&cg_window);
-            self.active_physical_display_mut().add_window(cg_window)?;
-            WindowMadeManaged(focused_window).log(&mut self.logger);
-        } else {
-            let removed = self
-                .active_physical_display_mut()
-                .remove_window(focused_window)?
-                .ok_or(Error::CouldNotRemoveWindow)?;
-
-            // Sanity check
-            if removed.cg().number() != focused_window {
-                panic!("just removed a window that we shouldn't have");
-            }
-
-            self.floating_windows.insert(removed.cg().clone());
-            WindowMadeFloating(focused_window).log(&mut self.logger);
-        }
-
-        Ok(())
-    }
+    // fn handle_toggle_floating(&mut self) -> Result<()> {
+    //     let focused_window = ax_ui::Window::try_get_focused().map_err(Error::AxUi)?;
+    //
+    //     let cg_window = self
+    //         .floating_windows
+    //         .iter()
+    //         .find(|w| w.number() == focused_window)
+    //         .cloned();
+    //
+    //     if let Some(cg_window) = cg_window {
+    //         self.floating_windows.remove(&cg_window);
+    //         self.active_physical_display_mut().add_window(cg_window)?;
+    //         WindowMadeManaged(focused_window).log(&mut self.logger);
+    //     } else {
+    //         let removed = self
+    //             .active_physical_display_mut()
+    //             .remove_window(focused_window)?
+    //             .ok_or(Error::CouldNotRemoveWindow)?;
+    //
+    //         // Sanity check
+    //         if removed.cg().number() != focused_window {
+    //             panic!("just removed a window that we shouldn't have");
+    //         }
+    //
+    //         self.floating_windows.insert(removed.cg().clone());
+    //         WindowMadeFloating(focused_window).log(&mut self.logger);
+    //     }
+    //
+    //     Ok(())
+    // }
 
     fn handle_resize(&mut self, direction: Direction) -> Result<()> {
         let focused_window = ax_ui::Window::try_get_focused().map_err(Error::AxUi)?;
@@ -382,7 +388,11 @@ impl WindowManager {
 
     fn handle_focus_shift(&mut self, direction: Direction) -> Result<()> {
         ShiftFocusInDirectionKeyCommand(direction).log(&mut self.logger);
-        self.active_physical_display_mut().shift_focus(direction)
+        // TODO: lol
+        match self.active_physical_display_mut().shift_focus(direction) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(e),
+        }
     }
 
     /// Move the currently focused window from one logical display to another.
@@ -406,14 +416,14 @@ impl WindowManager {
         let focused_window = ax_ui::Window::try_get_focused().map_err(Error::AxUi)?;
 
         // Find the physical display that owns the currently focused window.
-        let (source_physical_display_id, cg_window) = self
+        let (source_physical_display_id, window_id) = self
             .physical_displays
             .iter()
             .find_map(|(id, display)| {
                 display
                     .active_display()
                     .find_window(focused_window)
-                    .map(|w| (*id, w.cg().clone()))
+                    .map(|w| (*id, w))
             })
             .ok_or(Error::WindowNotFound)?;
 
@@ -443,7 +453,7 @@ impl WindowManager {
 
         target_physical_display
             .unwrap()
-            .add_window_to_logical(cg_window, target_logical_display_id)?;
+            .add_window_to_logical(window_id, target_logical_display_id)?;
 
         WindowMovedToLogicalDisplay(focused_window, target_logical_display_id)
             .log(&mut self.logger);
@@ -482,7 +492,7 @@ impl WindowManager {
             Some(physical_id) => {
                 let physical = self.physical_displays.get_mut(&physical_id).unwrap();
                 physical.switch_to(logical_id)?;
-                physical.active_display().refocus()?;
+                // physical.active_display().refocus()?;
             }
         }
 
