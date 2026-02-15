@@ -32,6 +32,7 @@ impl Axis {
 }
 
 #[derive(Debug)]
+#[cfg_attr(test, derive(PartialEq))]
 pub(super) enum Container {
     Empty {
         bounds: Bounds,
@@ -476,5 +477,405 @@ fn spread_bounds_in_direction(original: Bounds, axis: Axis, n: usize, padding: f
                 })
                 .collect()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use core_graphics::{Bounds, WindowId};
+
+    fn dummy_bounds() -> Bounds {
+        Bounds {
+            x: 0.0,
+            y: 0.0,
+            width: 800.0,
+            height: 600.0,
+        }
+    }
+
+    fn dummy_empty() -> Container {
+        Container::Empty {
+            bounds: dummy_bounds(),
+        }
+    }
+
+    fn dummy_leaf(window_id: WindowId) -> Container {
+        Container::Leaf {
+            bounds: dummy_bounds(),
+            padding: 0.0,
+            window_id,
+        }
+    }
+
+    // This is not a valid `Container` since the child bounds are wrong. It only
+    // servers to be used in tests that are not checking correctness of bounds.
+    fn dummy_split(axis: Axis, window_ids: &[WindowId]) -> Container {
+        Container::Split {
+            bounds: dummy_bounds(),
+            padding: 0.0,
+            axis,
+            children: window_ids.iter().map(|id| dummy_leaf(*id)).collect(),
+        }
+    }
+
+    #[test]
+    fn getting_window_bounds_from_non_leaf_is_none() {
+        let empty = dummy_empty();
+        assert!(empty.window_bounds().is_none());
+
+        let split = dummy_split(Axis::default(), &[]);
+        assert!(split.window_bounds().is_none());
+    }
+
+    #[test]
+    fn leaf_window_bounds_includes_correct_padding() {
+        let container_bounds = dummy_bounds();
+        const PADDING: f64 = 10.0;
+        let exp_window_bounds = Bounds {
+            height: container_bounds.height - 20.0,
+            width: container_bounds.width - 20.0,
+            x: container_bounds.x + PADDING,
+            y: container_bounds.y + PADDING,
+        };
+
+        let container = Container::Leaf {
+            bounds: container_bounds,
+            padding: PADDING,
+            window_id: WindowId::from(1u32),
+        };
+
+        assert_eq!(container.window_bounds().unwrap(), exp_window_bounds);
+    }
+
+    #[test]
+    fn add_window_to_empty_creates_leaf() {
+        let mut container = dummy_empty();
+        let window_id = WindowId::from(1u32);
+
+        assert!(container.add_window(window_id, 10.0).is_ok());
+
+        match container {
+            Container::Split { children, .. } => {
+                assert_eq!(children.len(), 1);
+                match &children[0] {
+                    Container::Leaf {
+                        window_id: id,
+                        padding,
+                        bounds,
+                    } => {
+                        assert_eq!(*id, window_id);
+                        assert_eq!(*padding, 10.0);
+                        assert_eq!(*bounds, dummy_bounds());
+                    }
+                    _ => panic!("Expected a leaf inside split"),
+                }
+            }
+            _ => panic!("Expected container to become a split"),
+        }
+    }
+
+    #[test]
+    fn add_window_to_split_adds_new_leaf() {
+        let container_bounds = dummy_bounds();
+        let mut container = dummy_empty();
+
+        // The split should be horizontal with each leaf taking half the space.
+        let exp_first_leaf_bounds = Bounds {
+            height: container_bounds.height,
+            width: container_bounds.width / 2.0,
+            x: 0.0,
+            y: 0.0,
+        };
+        let exp_second_leaf_bounds = Bounds {
+            height: container_bounds.height,
+            width: container_bounds.width / 2.0,
+            x: container_bounds.width / 2.0,
+            y: 0.0,
+        };
+
+        let first_id = WindowId::from(1u32);
+        let second_id = WindowId::from(2u32);
+
+        const PADDING: f64 = 0.0;
+
+        container.add_window(first_id, PADDING).unwrap();
+        container.add_window(second_id, PADDING).unwrap();
+
+        match container {
+            Container::Split { children, .. } => {
+                assert_eq!(children.len(), 2);
+                let ids: Vec<_> = children
+                    .iter()
+                    .map(|c| {
+                        if let Container::Leaf { window_id, .. } = c {
+                            *window_id
+                        } else {
+                            WindowId::from(0u32)
+                        }
+                    })
+                    .collect();
+                assert!(ids.contains(&first_id));
+                assert!(ids.contains(&second_id));
+                assert_eq!(children[0].get_bounds(), exp_first_leaf_bounds);
+                assert_eq!(children[1].get_bounds(), exp_second_leaf_bounds);
+            }
+            _ => panic!("Expected container to be a split"),
+        }
+    }
+
+    #[test]
+    fn add_window_to_leaf_errors() {
+        let mut container = dummy_leaf(WindowId::from(1u32));
+        let result = container.add_window(WindowId::from(2u32), 10.0);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn splitting_empty_errors() {
+        let mut container = dummy_empty();
+        assert!(container.split(Axis::Vertical).is_err())
+    }
+
+    #[test]
+    fn splitting_split_with_many_children_errors() {
+        // This container could not exist because the bounds are wrong
+        let mut container = dummy_split(
+            Axis::default(),
+            &[WindowId::from(1u32), WindowId::from(2u32)],
+        );
+        assert!(container.split(Axis::Vertical).is_err());
+    }
+
+    #[test]
+    fn splitting_split_with_one_child_changes_axis() {
+        use Axis::*;
+
+        for (starting_axis, change_axis, exp_axis) in [
+            (Horizontal, Vertical, Vertical),
+            (Horizontal, Horizontal, Horizontal),
+            (Vertical, Horizontal, Horizontal),
+            (Vertical, Vertical, Vertical),
+        ] {
+            let mut container = dummy_split(starting_axis, &[WindowId::from(1u32)]);
+            container.split(change_axis).unwrap();
+            assert!(
+                matches!(container, Container::Split { axis, children, .. } if axis == exp_axis && children.len() == 1)
+            );
+        }
+    }
+
+    #[test]
+    fn splitting_leaf_converts_to_split_with_same_bounds() {
+        let mut container = dummy_leaf(WindowId::from(1u32));
+
+        // The same as above, but we can't clone it since containers contain a
+        // Vec
+        let leaf = dummy_leaf(WindowId::from(1u32));
+
+        container.split(Axis::Vertical).unwrap();
+
+        assert!(matches!(container, Container::Split{
+            bounds, children, axis, padding
+        } if bounds == dummy_bounds()
+            && children == vec![leaf]
+            && axis == Axis::Vertical
+            && padding == 0.0
+        ));
+    }
+
+    #[test]
+    fn find_window_empty_is_none() {
+        let container = dummy_empty();
+        assert!(container.find_window(WindowId::from(0u32)).is_none());
+    }
+
+    #[test]
+    fn find_window_leaf() {
+        let target = WindowId::from(1u32);
+        let container = dummy_leaf(target);
+
+        assert!(container.find_window(target).is_some());
+        assert!(container.find_window(WindowId::from(18u32)).is_none());
+    }
+
+    #[test]
+    fn find_window_split() {
+        let target = WindowId::from(1u32);
+        let container = dummy_split(Axis::default(), &[target]);
+
+        assert!(container.find_window(target).is_some());
+        assert!(container.find_window(WindowId::from(18u32)).is_none());
+    }
+
+    #[test]
+    fn window_ids_empty() {
+        let container = dummy_empty();
+        assert!(container.window_ids().is_empty());
+    }
+
+    #[test]
+    fn window_ids_leaf() {
+        let container = dummy_leaf(WindowId::from(1u32));
+        assert_eq!(
+            container.window_ids(),
+            HashSet::from([WindowId::from(1u32)])
+        );
+    }
+
+    #[test]
+    fn window_ids_split() {
+        let window_ids = [WindowId::from(1u32), WindowId::from(2u32)];
+        let container = dummy_split(Axis::default(), &window_ids);
+        assert_eq!(container.window_ids(), HashSet::from(window_ids));
+    }
+
+    #[test]
+    fn remove_window_from_leaf_non_existent() {
+        let mut container = dummy_leaf(WindowId::from(1u32));
+        let target = WindowId::from(2u32);
+        assert!(container.remove_window_from_leaf(target).unwrap().is_none());
+    }
+
+    #[test]
+    fn remove_window_from_leaf_existent() {
+        let mut container = dummy_leaf(WindowId::from(1u32));
+        let target = WindowId::from(1u32);
+        assert!(
+            container
+                .remove_window_from_leaf(target)
+                .unwrap()
+                .is_some_and(|id| id == target)
+        );
+    }
+
+    #[test]
+    fn is_parent_leaf_non_leaf() {
+        let empty = dummy_empty();
+        let split = dummy_split(
+            Axis::default(),
+            &[WindowId::from(1u32), WindowId::from(2u32)],
+        );
+
+        assert!(!empty.is_parent_leaf(WindowId::from(1u32)));
+        assert!(!split.is_parent_leaf(WindowId::from(2u32)));
+    }
+
+    #[test]
+    fn is_parent_leaf_leaf() {
+        let target = WindowId::from(1u32);
+        let parent = dummy_leaf(target);
+        let non_parent = dummy_leaf(WindowId::from(2u32));
+
+        assert!(parent.is_parent_leaf(target));
+        assert!(!non_parent.is_parent_leaf(target));
+    }
+
+    #[test]
+    fn remove_window_empty() {
+        assert!(
+            dummy_empty()
+                .remove_window(WindowId::from(1u32), 0.0)
+                .unwrap()
+                .is_none()
+        )
+    }
+
+    #[test]
+    fn remove_window_leaf_target_exists() {
+        let target = WindowId::from(1u32);
+        let mut leaf = dummy_leaf(target);
+
+        let res = leaf.remove_window(target, 0.0).unwrap();
+
+        assert!(res.is_some_and(|id| id == target));
+        assert!(matches!(leaf, Container::Empty { .. }))
+    }
+
+    #[test]
+    fn remove_window_leaf_target_does_not_exist() {
+        let target = WindowId::from(1u32);
+        let mut leaf = dummy_leaf(WindowId::from(2u32));
+
+        let res = leaf.remove_window(target, 0.0).unwrap();
+
+        assert!(res.is_none());
+        assert!(
+            matches!(leaf, Container::Leaf { window_id,.. } if window_id == WindowId::from(2u32))
+        );
+    }
+
+    #[test]
+    fn remove_window_split_target_does_not_exist() {
+        let target = WindowId::from(1u32);
+        let mut split = dummy_split(Axis::default(), &[WindowId::from(2u32)]);
+
+        let res = split.remove_window(target, 0.0).unwrap();
+        assert!(res.is_none())
+    }
+
+    #[test]
+    fn remove_window_split_target_exists_only_child() {
+        let target = WindowId::from(1u32);
+        let mut split = dummy_split(Axis::default(), &[target]);
+
+        let res = split.remove_window(target, 0.0).unwrap();
+
+        assert!(res.is_some_and(|id| id == target));
+        assert!(matches!(split, Container::Empty { .. }))
+    }
+
+    #[test]
+    fn remove_window_split_target_exists_two_children() {
+        let target = WindowId::from(1u32);
+        let mut split = dummy_split(
+            Axis::default(),
+            &[WindowId::from(1u32), WindowId::from(2u32)],
+        );
+
+        let res = split.remove_window(target, 0.0).unwrap();
+
+        assert!(res.is_some_and(|id| id == target));
+        assert!(matches!(split, Container::Split { children, .. }
+            if children == vec![Container::Leaf {
+                bounds: split.get_bounds(),
+                padding: 0.0,
+                window_id: WindowId::from(2u32)
+            }]
+        ))
+    }
+
+    #[test]
+    fn remove_window_split_target_exists_many_children() {
+        let target = WindowId::from(1u32);
+        let mut split = dummy_split(
+            Axis::default(),
+            &[
+                WindowId::from(1u32),
+                WindowId::from(2u32),
+                WindowId::from(3u32),
+            ],
+        );
+
+        let res = split.remove_window(target, 0.0).unwrap();
+
+        let exp_child_bounds =
+            spread_bounds_in_direction(split.get_bounds(), Axis::default(), 2, 0.0);
+
+        assert!(res.is_some_and(|id| id == target));
+        assert!(matches!(split, Container::Split { children, .. }
+            if children == vec![
+                Container::Leaf {
+                    bounds: exp_child_bounds[0],
+                    padding: 0.0,
+                    window_id: WindowId::from(2u32)
+                },
+                Container::Leaf {
+                    bounds:exp_child_bounds[1],
+                    padding: 0.0,
+                    window_id: WindowId::from(3u32)
+                }
+            ]
+        ))
     }
 }
