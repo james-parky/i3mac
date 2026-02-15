@@ -94,7 +94,7 @@ impl Container {
         {
             let num_new_children = children.len() + 1;
             let new_children_bounds =
-                spread_bounds_in_direction(*bounds, *axis, num_new_children, padding);
+                spread_bounds_along_axis(*bounds, *axis, num_new_children, padding);
 
             children.push(Container::Leaf {
                 bounds: new_children_bounds[num_new_children - 1],
@@ -230,7 +230,7 @@ impl Container {
                     *self = Container::Empty { bounds: *bounds };
                 } else {
                     let new_bounds =
-                        spread_bounds_in_direction(*bounds, *axis, children.len(), padding);
+                        spread_bounds_along_axis(*bounds, *axis, children.len(), padding);
                     for (child, b) in children.iter_mut().zip(new_bounds) {
                         child.resize(b, padding)?;
                     }
@@ -272,7 +272,7 @@ impl Container {
     fn resize_children(&mut self, new_bounds: Bounds, padding: f64) -> Result<()> {
         if let Self::Split { children, axis, .. } = self {
             let new_children_bounds =
-                spread_bounds_in_direction(new_bounds, *axis, children.len(), padding);
+                spread_bounds_along_axis(new_bounds, *axis, children.len(), padding);
 
             for (child, child_bounds) in children.iter_mut().zip(new_children_bounds) {
                 child.resize(child_bounds, padding)?;
@@ -343,7 +343,7 @@ impl Container {
                 *bounds = new_bounds;
 
                 let child_bounds =
-                    spread_bounds_in_direction(new_bounds, *axis, children.len(), padding);
+                    spread_bounds_along_axis(new_bounds, *axis, children.len(), padding);
                 for (child, cb) in children.iter_mut().zip(child_bounds) {
                     child.resize(cb, padding)?;
                 }
@@ -441,7 +441,7 @@ impl Container {
     }
 }
 
-fn spread_bounds_in_direction(original: Bounds, axis: Axis, n: usize, padding: f64) -> Vec<Bounds> {
+fn spread_bounds_along_axis(original: Bounds, axis: Axis, n: usize, padding: f64) -> Vec<Bounds> {
     match axis {
         Axis::Horizontal => {
             let total_inner_gap = (n - 1) as f64 * (padding); // half padding between children
@@ -485,6 +485,12 @@ mod tests {
     use super::*;
     use core_graphics::{Bounds, WindowId};
 
+    const EPSILON: f64 = 1e-10;
+
+    fn approx(a: f64, b: f64) -> bool {
+        (a - b).abs() < EPSILON
+    }
+
     fn dummy_bounds() -> Bounds {
         Bounds {
             x: 0.0,
@@ -517,6 +523,33 @@ mod tests {
             axis,
             children: window_ids.iter().map(|id| dummy_leaf(*id)).collect(),
         }
+    }
+
+    #[test]
+    fn get_bounds() {
+        let empty = dummy_empty();
+        let leaf = dummy_leaf(WindowId::from(1u32));
+        let split = dummy_split(Axis::default(), &[WindowId::from(1u32)]);
+
+        assert_eq!(empty.get_bounds(), dummy_bounds());
+        assert_eq!(leaf.get_bounds(), dummy_bounds());
+        assert_eq!(split.get_bounds(), dummy_bounds());
+    }
+
+    #[test]
+    fn contains_window() {
+        assert!(!dummy_empty().contains_window(WindowId::from(1u32)));
+
+        let target = WindowId::from(1u32);
+        let leaf_with = dummy_leaf(target);
+        let leaf_without = dummy_leaf(WindowId::from(2u32));
+        let split_with = dummy_split(Axis::Horizontal, &[target]);
+        let split_without = dummy_split(Axis::Horizontal, &[WindowId::from(2u32)]);
+
+        assert!(leaf_with.contains_window(target));
+        assert!(!leaf_without.contains_window(target));
+        assert!(split_with.contains_window(target));
+        assert!(!split_without.contains_window(target));
     }
 
     #[test]
@@ -860,7 +893,7 @@ mod tests {
         let res = split.remove_window(target, 0.0).unwrap();
 
         let exp_child_bounds =
-            spread_bounds_in_direction(split.get_bounds(), Axis::default(), 2, 0.0);
+            spread_bounds_along_axis(split.get_bounds(), Axis::default(), 2, 0.0);
 
         assert!(res.is_some_and(|id| id == target));
         assert!(matches!(split, Container::Split { children, .. }
@@ -877,5 +910,189 @@ mod tests {
                 }
             ]
         ))
+    }
+
+    #[test]
+    fn get_leaf_of_window_mut_empty() {
+        let mut container = dummy_empty();
+        let target = WindowId::from(1u32);
+
+        assert!(container.parent_leaf_of_window_mut(target).is_none());
+    }
+
+    #[test]
+    fn get_leaf_of_window_mut_leaf() {
+        let target = WindowId::from(1u32);
+        let mut is_parent = dummy_leaf(target);
+        let mut not_parent = dummy_leaf(WindowId::from(2u32));
+
+        assert!(is_parent.parent_leaf_of_window_mut(target).is_some_and(
+            |leaf| matches!(leaf, Container::Leaf { window_id,.. } if *window_id == target)
+        ));
+
+        assert!(not_parent.parent_leaf_of_window_mut(target).is_none());
+    }
+
+    #[test]
+    fn get_leaf_of_window_split() {
+        let target = WindowId::from(1u32);
+        let mut exists = dummy_split(Axis::default(), &[WindowId::from(2u32), target]);
+        let mut doest_not_exist = dummy_split(
+            Axis::default(),
+            &[WindowId::from(2u32), WindowId::from(3u32)],
+        );
+
+        assert!(exists.parent_leaf_of_window_mut(target).is_some());
+        assert!(doest_not_exist.parent_leaf_of_window_mut(target).is_none());
+    }
+
+    #[test]
+    fn spread_bounds_along_axis_horizontal() {
+        let original = dummy_bounds();
+
+        for &padding in &[0.0, 5.0, 10.0, 17.5] {
+            for n in 1usize..=8 {
+                let out = spread_bounds_along_axis(original, Axis::Horizontal, n, padding);
+                assert_eq!(out.len(), n);
+
+                let total_inner_gap = (n - 1) as f64 * padding;
+                let available_width = original.width - 2.0 * padding - total_inner_gap;
+                let child_width = available_width / n as f64;
+                let expected_height = original.height - 2.0 * padding;
+
+                // The first child starts after the correct padding
+                assert!(approx(out[0].x, original.x + padding));
+                assert!(approx(out[0].y, original.y + padding));
+
+                // The last child has the correct amount of padding after it
+                let last = &out[n - 1];
+                assert!(approx(
+                    last.x + last.width,
+                    original.x + original.width - padding
+                ));
+
+                // Each inner child's bounds are correct
+                for (i, b) in out.iter().enumerate() {
+                    assert!(approx(b.width, child_width));
+                    assert!(approx(b.height, expected_height));
+                    assert!(approx(b.y, original.y + padding));
+
+                    let expected_x = original.x + padding + i as f64 * (child_width + padding);
+                    assert!(approx(b.x, expected_x));
+                }
+
+                // The difference between child positions is the padding
+                for i in 1..n {
+                    let prev = &out[i - 1];
+                    let cur = &out[i];
+                    assert!(approx(cur.x - (prev.x + prev.width), padding));
+                }
+
+                // Validate that the bounds aren't overlapping (bar some margin
+                // for error)
+                for i in 1..n {
+                    assert!(out[i].x >= out[i - 1].x + out[i - 1].width - EPSILON);
+                }
+
+                // Full available width is spanned
+                let covered: f64 = out.iter().map(|b| b.width).sum();
+                assert!(approx(covered, available_width));
+            }
+        }
+    }
+
+    #[test]
+    fn spread_bounds_along_axis_vertical() {
+        let original = dummy_bounds();
+
+        for &padding in &[0.0, 3.0, 8.0, 20.0] {
+            for n in 1usize..=8 {
+                let out = spread_bounds_along_axis(original, Axis::Vertical, n, padding);
+
+                assert_eq!(out.len(), n);
+
+                let total_inner_gap = (n - 1) as f64 * padding;
+                let available_height = original.height - 2.0 * padding - total_inner_gap;
+                let child_height = available_height / n as f64;
+                let expected_width = original.width - 2.0 * padding;
+
+                assert!(approx(out[0].y, original.y + padding));
+                assert!(approx(out[0].x, original.x + padding));
+
+                let last = &out[n - 1];
+                assert!(approx(
+                    last.y + last.height,
+                    original.y + original.height - padding
+                ));
+
+                for (i, b) in out.iter().enumerate() {
+                    assert!(approx(b.height, child_height));
+                    assert!(approx(b.width, expected_width));
+                    assert!(approx(b.x, original.x + padding));
+
+                    let expected_y = original.y + padding + i as f64 * (child_height + padding);
+                    assert!(approx(b.y, expected_y));
+                }
+
+                for i in 1..n {
+                    let prev = &out[i - 1];
+                    let cur = &out[i];
+                    assert!(approx(cur.y - (prev.y + prev.height), padding));
+                }
+
+                for i in 1..n {
+                    assert!(out[i].y >= out[i - 1].y + out[i - 1].height - EPSILON);
+                }
+
+                let covered: f64 = out.iter().map(|b| b.height).sum();
+                assert!(approx(covered, available_height));
+            }
+        }
+    }
+
+    #[test]
+    fn n_equals_one_fills_inner_area() {
+        let original = dummy_bounds();
+
+        for &padding in &[0.0, 5.0, 25.0] {
+            for axis in [Axis::Horizontal, Axis::Vertical] {
+                let out = spread_bounds_along_axis(original, axis, 1, padding);
+                let b = &out[0];
+
+                assert!(approx(b.x, original.x + padding));
+                assert!(approx(b.y, original.y + padding));
+                assert!(approx(b.width, original.width - 2.0 * padding));
+                assert!(approx(b.height, original.height - 2.0 * padding));
+            }
+        }
+    }
+
+    #[test]
+    fn spread_bounds_along_axis_symmetry() {
+        let original = Bounds {
+            x: 0.0,
+            y: 0.0,
+            width: 600.0,
+            height: 800.0,
+        };
+
+        let padding = 12.0;
+        let n = 4;
+
+        let h = spread_bounds_along_axis(original, Axis::Horizontal, n, padding);
+
+        let transposed = Bounds {
+            x: original.x,
+            y: original.y,
+            width: original.height,
+            height: original.width,
+        };
+
+        let v = spread_bounds_along_axis(transposed, Axis::Vertical, n, padding);
+
+        for (bh, bv) in h.iter().zip(v.iter()) {
+            assert!(approx(bh.width, bv.height));
+            assert!(approx(bh.height, bv.width));
+        }
     }
 }
