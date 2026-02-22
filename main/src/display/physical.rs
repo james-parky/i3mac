@@ -1,16 +1,14 @@
-use crate::window::Window;
 use crate::{
     container,
     display::{LogicalDisplay, LogicalDisplayId},
     error::{Error, Result},
-    status_bar::StatusBar,
 };
-use container::Axis;
+use container::{Axis, Window};
 use core_graphics::{Bounds, Direction, DisplayId, WindowId};
 use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone, Hash, Ord, PartialOrd)]
-pub(crate) struct PhysicalDisplayId(pub usize);
+pub struct PhysicalDisplayId(pub usize);
 
 impl std::fmt::Display for PhysicalDisplayId {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -25,6 +23,7 @@ impl From<DisplayId> for PhysicalDisplayId {
 }
 
 #[derive(Debug, Copy, Clone)]
+#[cfg_attr(test, derive(Default))]
 pub struct Config {
     pub window_padding: Option<f64>,
 }
@@ -41,43 +40,29 @@ pub(crate) struct PhysicalDisplay {
     bounds: Bounds,
     logical_displays: HashMap<LogicalDisplayId, LogicalDisplay>,
     active_logical_id: LogicalDisplayId,
-    status_bar: StatusBar,
     config: Config,
 }
 
 impl PhysicalDisplay {
-    pub fn new(
-        physical_id: PhysicalDisplayId,
-        cg_display: core_graphics::Display,
-        config: Config,
-    ) -> Self {
-        let mut logical_display = LogicalDisplay::new(cg_display.bounds, config.into());
-        for window in cg_display.windows {
-            // TODO: handle
-            let _ = logical_display.add_window(window.number());
-        }
-
-        let logical_id = LogicalDisplayId(physical_id.0);
+    pub fn new(logical_id: LogicalDisplayId, bounds: Bounds, config: Config) -> Self {
+        let logical_display = LogicalDisplay::new(bounds, config.into());
+        // for window in cg_display.windows {
+        //     // TODO: handle
+        //     let cw = container::Window{
+        //         id: window.number(),
+        //         min_width: window.,
+        //         min_height: 0.0,
+        //     }
+        //     let _ = logical_display.add_window(window.number());
+        // }
 
         let mut logical_displays = HashMap::new();
         logical_displays.insert(logical_id, logical_display);
 
-        let status_bar = StatusBar::new(
-            logical_id,
-            logical_displays
-                .keys()
-                .cloned()
-                .collect::<Vec<LogicalDisplayId>>(),
-            cg_display.bounds,
-        );
-
-        status_bar.display();
-
         Self {
-            bounds: cg_display.bounds,
+            bounds,
             logical_displays,
             active_logical_id: logical_id,
-            status_bar,
             config,
         }
     }
@@ -92,14 +77,24 @@ impl PhysicalDisplay {
         all_window_ids
     }
 
+    pub fn window_bounds(&self) -> HashMap<WindowId, Bounds> {
+        self.logical_displays
+            .values()
+            .flat_map(|d| d.window_bounds())
+            .collect()
+    }
+
     // When adding a window to a physical display, delegate to the currently
     // active logical display.
-    pub fn add_window(&mut self, window_id: WindowId) -> Result<()> {
+    //
+    // Either the window will be added to the physical display's active logical
+    // display, or a new logical display will be created and made active for it.
+    pub fn add_window(&mut self, window: Window) -> Result<()> {
         // TODO: no unwrap
         self.logical_displays
             .get_mut(&self.active_logical_id)
             .unwrap()
-            .add_window(window_id)
+            .add_window(window)
     }
 
     pub fn active_logical_id(&self) -> LogicalDisplayId {
@@ -109,6 +104,9 @@ impl PhysicalDisplay {
     // When removing a window from a physical display, delegate to the currently
     // active logical display.
     pub fn remove_window(&mut self, window_id: WindowId) -> Result<Option<WindowId>> {
+        // TODO: find logical display that owns the window
+        println!("pd has {:?}", self.window_ids());
+        println!("remove {:?}", window_id);
         self.logical_displays
             .get_mut(&self.active_logical_id)
             .unwrap()
@@ -131,18 +129,27 @@ impl PhysicalDisplay {
             logical_id,
             LogicalDisplay::new(self.bounds, self.config.into()),
         );
-        self.update_status_bar();
+    }
+
+    pub fn remove_logical_display(&mut self, logical_id: LogicalDisplayId) {
+        // TODO: error trying to remove last one
+        self.logical_displays.remove(&logical_id);
+
+        // Crude way of getting new active LD
+        if let Some(k) = self.logical_displays.keys().next() {
+            self.active_logical_id = *k;
+        }
     }
 
     pub fn add_window_to_logical(
         &mut self,
-        window_id: WindowId,
+        window: Window,
         logical_display_id: LogicalDisplayId,
     ) -> Result<()> {
         self.logical_displays
             .get_mut(&logical_display_id)
             .unwrap()
-            .add_window(window_id)
+            .add_window(window)
     }
 
     pub fn resize_focused_window(&mut self, direction: Direction) -> Result<()> {
@@ -169,36 +176,23 @@ impl PhysicalDisplay {
     //    3. Focus the target logical display
     //    4. If the previous logical display now has no windows, delete it
     //    5. Update the physical display's status bar
-    pub fn switch_to(&mut self, logical_id: LogicalDisplayId) -> Result<()> {
+    pub fn switch_to(&mut self, logical_id: LogicalDisplayId) -> Result<bool> {
         if logical_id == self.active_logical_id {
-            return Ok(());
+            return Ok(false);
         }
 
         let current_logical = self.logical_displays.get(&self.active_logical_id).unwrap();
 
-        // Remove the logical window if there are no windows left
+        let mut removed = false;
+        // Remove the logical display if there are no windows left
         if current_logical.window_ids().is_empty() {
             self.logical_displays.remove(&self.active_logical_id);
+            removed = true;
         }
 
         self.active_logical_id = logical_id;
 
-        self.update_status_bar();
-
-        Ok(())
-    }
-
-    fn update_status_bar(&mut self) {
-        self.status_bar.close();
-        self.status_bar = StatusBar::new(
-            self.active_logical_id,
-            self.logical_displays
-                .keys()
-                .cloned()
-                .collect::<Vec<LogicalDisplayId>>(),
-            self.bounds,
-        );
-        self.status_bar.display();
+        Ok(removed)
     }
 
     // Delegate focus shifting to the currently active logical display.

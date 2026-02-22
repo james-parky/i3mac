@@ -17,7 +17,7 @@ fn main() {
     }
 
     let cfg = Config::must_parse();
-    let mut wm = WindowManager::new(cfg);
+    let mut wm = WindowManager::new(cfg).expect("failed to create window manager");
 
     if let Err(e) = wm.run() {
         eprintln!("Window Manager exited: {e:?}");

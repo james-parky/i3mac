@@ -4,7 +4,7 @@ use crate::{Bounds, DisplayId, Error, WindowId};
 use std::collections::{HashMap, HashSet};
 use std::ffi::c_uint;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Display {
     pub bounds: Bounds,
     // pub windows: Vec<Window>,

@@ -1,18 +1,23 @@
 use crate::{
     container,
-    container::Container,
+    container::{Axis, Container},
     error::{Error, Result},
     status_bar::StatusBar,
-    window::Window,
 };
-use container::Axis;
 use core_graphics::{Bounds, Direction, WindowId};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::fmt::Debug;
 
-#[derive(Debug, PartialEq, Eq, Copy, Clone, Hash, Ord, PartialOrd)]
-pub(crate) struct LogicalDisplayId(pub usize);
+#[derive(PartialEq, Eq, Copy, Clone, Hash, Ord, PartialOrd)]
+pub struct LogicalDisplayId(pub usize);
 
 impl std::fmt::Display for LogicalDisplayId {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl Debug for LogicalDisplayId {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "LD{}", self.0)
     }
@@ -109,9 +114,9 @@ impl LogicalDisplay {
     fn all_window_bounds(&self) -> Vec<(WindowId, Bounds)> {
         fn recurse(c: &Container, out: &mut Vec<(WindowId, Bounds)>) {
             match c {
-                Container::Leaf { window_id, .. } => {
+                Container::Leaf { window, .. } => {
                     if let Some(b) = c.window_bounds() {
-                        out.push((*window_id, b));
+                        out.push((window.id, b));
                     }
                 }
                 Container::Split { children, .. } => {
@@ -126,6 +131,10 @@ impl LogicalDisplay {
         let mut result = Vec::new();
         recurse(&self.root, &mut result);
         result
+    }
+
+    pub fn window_bounds(&self) -> HashMap<WindowId, Bounds> {
+        self.root.window_bounds_by_id()
     }
 
     pub(crate) fn window_ids(&self) -> HashSet<WindowId> {
@@ -172,7 +181,8 @@ impl LogicalDisplay {
     //  - Add new window as a child to that split
     // If there is no window:
     //  - Add new window as a child of the root (horizontal split)
-    pub fn add_window(&mut self, window_id: WindowId) -> Result<()> {
+    pub fn add_window(&mut self, window: container::Window) -> Result<()> {
+        println!("adding window {window:?} to {self:?}");
         let container = if let Some(focused_id) = self.focused_window
             && let Some(container) = self.root.get_parent_of_window_mut(focused_id)
         {
@@ -181,8 +191,14 @@ impl LogicalDisplay {
             &mut self.root
         };
 
-        self.focused_window = Some(window_id);
-        container.add_window(window_id, self.config.window_padding())
+        match container.add_window(window, self.config.window_padding()) {
+            Ok(()) => {
+                self.focused_window = Some(window.id);
+                println!("ld after add: {self:?}");
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
     }
 
     pub fn resize_focused_window(&mut self, direction: Direction) -> Result<()> {

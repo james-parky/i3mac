@@ -77,6 +77,16 @@ pub struct CGSize {
     pub height: CGFloat,
 }
 
+impl Default for CGSize {
+    fn default() -> Self {
+        // Completely arbitrary
+        CGSize {
+            width: 800.0,
+            height: 200.0,
+        }
+    }
+}
+
 #[repr(C)]
 #[derive(Debug)]
 pub struct CGRect {

@@ -23,6 +23,22 @@ impl PartialEq for Window {
 
 impl Eq for Window {}
 
+impl TryFrom<core_graphics::Window> for Window {
+    type Error = Error;
+
+    fn try_from(value: core_graphics::Window) -> std::result::Result<Self, Self::Error> {
+        let ax_window =
+            ax_ui::Window::new(value.owner_pid(), value.number()).map_err(Error::AxUi)?;
+        ax_window.unminimise().map_err(Error::AxUi)?;
+        ax_window.try_focus().map_err(Error::AxUi)?;
+
+        Ok(Self {
+            bounds: value.bounds().clone(),
+            cg: value,
+            ax: ax_window,
+        })
+    }
+}
 impl Window {
     pub fn bounds(&self) -> &Bounds {
         &self.bounds
@@ -37,6 +53,7 @@ impl Window {
     }
 
     pub(crate) fn init(&mut self) -> Result<()> {
+        println!("moving window {} to {:?}", self.cg.number(), self.bounds);
         self.ax
             .try_move_to(self.bounds.x, self.bounds.y)
             .map_err(Error::AxUi)?;
@@ -45,19 +62,6 @@ impl Window {
             .map_err(Error::AxUi)?;
 
         Ok(())
-    }
-
-    pub(crate) fn try_new(cg_window: core_graphics::Window, bounds: Bounds) -> Result<Self> {
-        let ax_window =
-            ax_ui::Window::new(cg_window.owner_pid(), cg_window.number()).map_err(Error::AxUi)?;
-        ax_window.unminimise().map_err(Error::AxUi)?;
-        ax_window.try_focus().map_err(Error::AxUi)?;
-
-        Ok(Self {
-            cg: cg_window,
-            ax: ax_window,
-            bounds,
-        })
     }
 
     pub fn update_bounds(&mut self, new_bounds: Bounds) -> Result<()> {

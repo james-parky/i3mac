@@ -1,7 +1,25 @@
 use crate::error::{Error, Result};
 use core_graphics::{Bounds, Direction, WindowId};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
+
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub struct Window {
+    pub id: WindowId,
+    pub min_width: f64,
+    pub min_height: f64,
+}
+
+impl From<crate::window::Window> for Window {
+    fn from(window: crate::window::Window) -> Self {
+        let min_size = window.ax().min_size().unwrap_or_default();
+        Self {
+            id: window.cg().number(),
+            min_height: min_size.height,
+            min_width: min_size.width,
+        }
+    }
+}
 
 #[derive(Debug, Default, Copy, Clone, Hash, PartialEq)]
 pub enum Axis {
@@ -40,7 +58,7 @@ pub(super) enum Container {
     Leaf {
         bounds: Bounds,
         padding: f64,
-        window_id: WindowId,
+        window: Window,
     },
     Split {
         bounds: Bounds,
@@ -60,7 +78,7 @@ impl Container {
         }
     }
 
-    fn add_window_to_empty(&mut self, window_id: WindowId, padding: f64) -> Result<()> {
+    fn add_window_to_empty(&mut self, window: Window, padding: f64) -> Result<()> {
         if let Self::Empty { bounds } = self {
             *self = Self::Split {
                 bounds: *bounds,
@@ -69,7 +87,7 @@ impl Container {
                 children: vec![Self::Leaf {
                     bounds: *bounds,
                     padding,
-                    window_id,
+                    window,
                 }],
             };
 
@@ -80,11 +98,31 @@ impl Container {
         }
     }
 
+    pub fn min_width(&self) -> f64 {
+        match self {
+            Self::Leaf { window, .. } => window.min_width,
+            Self::Split { children, .. } => {
+                children.iter().map(|c| c.min_width()).fold(0.0, f64::max)
+            }
+            Self::Empty { .. } => 0.0,
+        }
+    }
+
+    pub fn min_height(&self) -> f64 {
+        match self {
+            Self::Leaf { window, .. } => window.min_height,
+            Self::Split { children, .. } => {
+                children.iter().map(|c| c.min_height()).fold(0.0, f64::max)
+            }
+            Self::Empty { .. } => 0.0,
+        }
+    }
+
     // To add a window to a split container:
     //  1. Create the new window and add it to the split's children.
     //  2. Spread the containers bounds across the now N children.
     //  3. Resize all children using those new bounds.
-    fn add_window_to_split(&mut self, window_id: WindowId, padding: f64) -> Result<()> {
+    fn add_window_to_split(&mut self, window: Window, padding: f64) -> Result<()> {
         if let Self::Split {
             bounds,
             axis,
@@ -96,10 +134,24 @@ impl Container {
             let new_children_bounds =
                 spread_bounds_along_axis(*bounds, *axis, num_new_children, padding);
 
+            for (i, child) in children.iter().enumerate() {
+                let width_ok = new_children_bounds[i].width >= child.min_width();
+                let height_ok = new_children_bounds[i].height >= child.min_height();
+                if !width_ok || !height_ok {
+                    return Err(Error::CannotFitWindow);
+                }
+            }
+
+            // Also check new window
+            let last_bounds = new_children_bounds.last().unwrap();
+            if last_bounds.width < window.min_width || last_bounds.height < window.min_height {
+                return Err(Error::CannotFitWindow);
+            }
+
             children.push(Container::Leaf {
                 bounds: new_children_bounds[num_new_children - 1],
                 padding,
-                window_id,
+                window,
             });
 
             for (child, new_bounds) in children.iter_mut().zip(new_children_bounds) {
@@ -119,11 +171,11 @@ impl Container {
     //  - If a container is a split, add a new child, and adjust the bounds of
     //    the existing children. This requires adjusting the bounds of all
     //    existing children in said split, recursively.
-    pub fn add_window(&mut self, window_id: WindowId, padding: f64) -> Result<()> {
+    pub fn add_window(&mut self, window: Window, padding: f64) -> Result<()> {
         match self {
-            Self::Empty { .. } => self.add_window_to_empty(window_id, padding),
+            Self::Empty { .. } => self.add_window_to_empty(window, padding),
             Self::Leaf { .. } => Err(Error::CannotAddWindowToLeaf),
-            Self::Split { .. } => self.add_window_to_split(window_id, padding),
+            Self::Split { .. } => self.add_window_to_split(window, padding),
         }
     }
 
@@ -142,11 +194,11 @@ impl Container {
             Self::Leaf {
                 bounds,
                 padding,
-                window_id,
+                window,
             } => {
                 let saved_bounds = *bounds;
                 let saved_padding = *padding;
-                let saved_window_id = *window_id;
+                let saved_window = *window;
 
                 *self = Container::Split {
                     bounds: saved_bounds,
@@ -155,7 +207,7 @@ impl Container {
                     children: vec![Container::Leaf {
                         bounds: saved_bounds,
                         padding: saved_padding,
-                        window_id: saved_window_id,
+                        window: saved_window,
                     }],
                 };
 
@@ -166,7 +218,7 @@ impl Container {
 
     pub(super) fn find_window(&self, target: WindowId) -> Option<WindowId> {
         match self {
-            Self::Leaf { window_id, .. } if *window_id == target => Some(*window_id),
+            Self::Leaf { window, .. } if window.id == target => Some(window.id),
             Self::Split { children, .. } => {
                 children.iter().find_map(|child| child.find_window(target))
             }
@@ -177,7 +229,7 @@ impl Container {
     pub(super) fn window_ids(&self) -> HashSet<WindowId> {
         match self {
             Self::Empty { .. } => HashSet::new(),
-            Self::Leaf { window_id, .. } => HashSet::from([*window_id]),
+            Self::Leaf { window, .. } => HashSet::from([window.id]),
             Self::Split { children, .. } => children
                 .iter()
                 .flat_map(|child| child.window_ids())
@@ -185,17 +237,32 @@ impl Container {
         }
     }
 
+    pub fn window_bounds_by_id(&self) -> HashMap<WindowId, Bounds> {
+        match self {
+            Self::Empty { .. } => HashMap::new(),
+            Self::Leaf {
+                window,
+                bounds,
+                padding,
+            } => HashMap::from([(window.id, bounds.with_pad(*padding))]),
+            Self::Split { children, .. } => children
+                .iter()
+                .flat_map(|child| child.window_bounds_by_id())
+                .collect(),
+        }
+    }
+
     fn remove_window_from_leaf(&mut self, target: WindowId) -> Result<Option<WindowId>> {
         match self {
-            Self::Leaf { window_id, .. } if *window_id == target => {
+            Self::Leaf { window, .. } if window.id == target => {
                 let old = std::mem::replace(
                     self,
                     Self::Empty {
                         bounds: self.get_bounds(),
                     },
                 );
-                if let Container::Leaf { window_id, .. } = old {
-                    Ok(Some(window_id))
+                if let Container::Leaf { window, .. } = old {
+                    Ok(Some(window.id))
                 } else {
                     unreachable!()
                 }
@@ -205,7 +272,7 @@ impl Container {
     }
 
     fn is_parent_leaf(&self, target: WindowId) -> bool {
-        matches!(self, Self::Leaf{window_id,..} if *window_id == target)
+        matches!(self, Self::Leaf{window,..} if window.id == target)
     }
 
     fn remove_window_from_split(
@@ -221,9 +288,10 @@ impl Container {
         } = self
         {
             // Try to remove child directly
-            if let Some(pos) = children.iter().position(
-                |c| matches!(c, Container::Leaf { window_id: id, .. } if *id == window_id),
-            ) {
+            if let Some(pos) = children
+                .iter()
+                .position(|c| matches!(c, Container::Leaf { window, .. } if window.id == window_id))
+            {
                 let removed = children.remove(pos);
                 children.retain(|c| !matches!(c, Container::Empty { .. }));
                 if children.is_empty() {
@@ -236,8 +304,8 @@ impl Container {
                     }
                 }
 
-                if let Container::Leaf { window_id, .. } = removed {
-                    return Ok(Some(window_id));
+                if let Container::Leaf { window, .. } = removed {
+                    return Ok(Some(window.id));
                 } else {
                     unreachable!()
                 }
@@ -284,7 +352,7 @@ impl Container {
 
     pub fn parent_leaf_of_window_mut(&mut self, target: WindowId) -> Option<&mut Self> {
         match self {
-            Self::Leaf { window_id, .. } if *window_id == target => Some(self),
+            Self::Leaf { window, .. } if window.id == target => Some(self),
             Self::Split { children, .. } => {
                 for child in children {
                     if let Some(parent) = child.parent_leaf_of_window_mut(target) {
@@ -425,7 +493,7 @@ impl Container {
     fn contains_window(&self, search: WindowId) -> bool {
         match self {
             Self::Empty { .. } => false,
-            Self::Leaf { window_id, .. } => *window_id == search,
+            Self::Leaf { window, .. } => window.id == search,
             Self::Split { children, .. } => {
                 children.iter().any(|child| child.contains_window(search))
             }
@@ -500,6 +568,14 @@ mod tests {
         }
     }
 
+    fn dummy_window(id: WindowId) -> Window {
+        Window {
+            id,
+            min_width: 100.0,
+            min_height: 100.0,
+        }
+    }
+
     fn dummy_empty() -> Container {
         Container::Empty {
             bounds: dummy_bounds(),
@@ -510,7 +586,7 @@ mod tests {
         Container::Leaf {
             bounds: dummy_bounds(),
             padding: 0.0,
-            window_id,
+            window: dummy_window(window_id),
         }
     }
 
@@ -575,7 +651,7 @@ mod tests {
         let container = Container::Leaf {
             bounds: container_bounds,
             padding: PADDING,
-            window_id: WindowId::from(1u32),
+            window: dummy_window(WindowId::from(1u32)),
         };
 
         assert_eq!(container.window_bounds().unwrap(), exp_window_bounds);
@@ -586,18 +662,18 @@ mod tests {
         let mut container = dummy_empty();
         let window_id = WindowId::from(1u32);
 
-        assert!(container.add_window(window_id, 10.0).is_ok());
+        assert!(container.add_window(dummy_window(window_id), 10.0).is_ok());
 
         match container {
             Container::Split { children, .. } => {
                 assert_eq!(children.len(), 1);
                 match &children[0] {
                     Container::Leaf {
-                        window_id: id,
+                        window,
                         padding,
                         bounds,
                     } => {
-                        assert_eq!(*id, window_id);
+                        assert_eq!(window.id, window_id);
                         assert_eq!(*padding, 10.0);
                         assert_eq!(*bounds, dummy_bounds());
                     }
@@ -632,8 +708,12 @@ mod tests {
 
         const PADDING: f64 = 0.0;
 
-        container.add_window(first_id, PADDING).unwrap();
-        container.add_window(second_id, PADDING).unwrap();
+        container
+            .add_window(dummy_window(first_id), PADDING)
+            .unwrap();
+        container
+            .add_window(dummy_window(second_id), PADDING)
+            .unwrap();
 
         match container {
             Container::Split { children, .. } => {
@@ -641,8 +721,8 @@ mod tests {
                 let ids: Vec<_> = children
                     .iter()
                     .map(|c| {
-                        if let Container::Leaf { window_id, .. } = c {
-                            *window_id
+                        if let Container::Leaf { window, .. } = c {
+                            window.id
                         } else {
                             WindowId::from(0u32)
                         }
@@ -660,7 +740,7 @@ mod tests {
     #[test]
     fn add_window_to_leaf_errors() {
         let mut container = dummy_leaf(WindowId::from(1u32));
-        let result = container.add_window(WindowId::from(2u32), 10.0);
+        let result = container.add_window(dummy_window(WindowId::from(2u32)), 10.0);
         assert!(result.is_err());
     }
 
@@ -833,9 +913,7 @@ mod tests {
         let res = leaf.remove_window(target, 0.0).unwrap();
 
         assert!(res.is_none());
-        assert!(
-            matches!(leaf, Container::Leaf { window_id,.. } if window_id == WindowId::from(2u32))
-        );
+        assert!(matches!(leaf, Container::Leaf { window,.. } if window.id == WindowId::from(2u32)));
     }
 
     #[test]
@@ -873,7 +951,7 @@ mod tests {
             if children == vec![Container::Leaf {
                 bounds: split.get_bounds(),
                 padding: 0.0,
-                window_id: WindowId::from(2u32)
+                window: dummy_window(WindowId::from(2u32)),
             }]
         ))
     }
@@ -901,12 +979,12 @@ mod tests {
                 Container::Leaf {
                     bounds: exp_child_bounds[0],
                     padding: 0.0,
-                    window_id: WindowId::from(2u32)
+                    window:dummy_window(WindowId::from(2u32))
                 },
                 Container::Leaf {
                     bounds:exp_child_bounds[1],
                     padding: 0.0,
-                    window_id: WindowId::from(3u32)
+                    window:dummy_window(WindowId::from(3u32))
                 }
             ]
         ))
@@ -927,7 +1005,7 @@ mod tests {
         let mut not_parent = dummy_leaf(WindowId::from(2u32));
 
         assert!(is_parent.parent_leaf_of_window_mut(target).is_some_and(
-            |leaf| matches!(leaf, Container::Leaf { window_id,.. } if *window_id == target)
+            |leaf| matches!(leaf, Container::Leaf { window,.. } if window.id == target)
         ));
 
         assert!(not_parent.parent_leaf_of_window_mut(target).is_none());

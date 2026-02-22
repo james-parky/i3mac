@@ -1,5 +1,5 @@
 use crate::bits::objc_msgSend;
-use crate::{Colour, NsElement, class, sel};
+use crate::{Colour, NsElement, class, msg_send, sel};
 use core_graphics::Bounds;
 use std::os::raw::c_void;
 
@@ -36,6 +36,18 @@ impl Window {
             Self::configure_window_level(window);
 
             Self { window }
+        }
+    }
+
+    pub fn clear_content_view(&mut self) {
+        unsafe {
+            let content_view = msg_send!(self.window, sel("contentView"));
+            let subviews = msg_send!(content_view, sel("subviews"));
+            msg_send!(
+                subviews,
+                sel("makeObjectsPerformSelector:"),
+                sel("removeFromSuperview")
+            );
         }
     }
 

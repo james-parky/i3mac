@@ -19,6 +19,10 @@ use std::hash::{Hash, Hasher};
 #[allow(dead_code)]
 pub struct DisplayId(u32);
 
+impl DisplayId {
+    pub const PLACEHOLDER: DisplayId = DisplayId(0);
+}
+
 impl From<DisplayId> for usize {
     fn from(id: DisplayId) -> Self {
         id.0 as usize
