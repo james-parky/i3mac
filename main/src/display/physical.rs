@@ -22,6 +22,12 @@ impl From<DisplayId> for PhysicalDisplayId {
     }
 }
 
+impl From<PhysicalDisplayId> for DisplayId {
+    fn from(id: PhysicalDisplayId) -> Self {
+        DisplayId::from(id.0)
+    }
+}
+
 #[derive(Debug, Copy, Clone)]
 #[cfg_attr(test, derive(Default))]
 pub struct Config {
@@ -67,6 +73,19 @@ impl PhysicalDisplay {
         }
     }
 
+    pub fn set_focused_window(&mut self, window_id: WindowId) {
+        if let Some(lid) = self.logical_displays.get_mut(&self.active_logical_id) {
+            lid.set_focused_window(window_id);
+        }
+    }
+
+    pub fn active_window_bounds(&self) -> HashMap<WindowId, Bounds> {
+        self.logical_displays
+            .get(&self.active_logical_id)
+            .map(|ld| ld.window_bounds())
+            .unwrap_or_default()
+    }
+
     pub fn window_ids(&self) -> HashSet<WindowId> {
         let mut all_window_ids: HashSet<WindowId> = HashSet::new();
 
@@ -104,13 +123,12 @@ impl PhysicalDisplay {
     // When removing a window from a physical display, delegate to the currently
     // active logical display.
     pub fn remove_window(&mut self, window_id: WindowId) -> Result<Option<WindowId>> {
-        // TODO: find logical display that owns the window
-        println!("pd has {:?}", self.window_ids());
-        println!("remove {:?}", window_id);
-        self.logical_displays
-            .get_mut(&self.active_logical_id)
-            .unwrap()
-            .remove_window(window_id)
+        let owner = self
+            .logical_displays
+            .values_mut()
+            .find(|ld| ld.window_ids().contains(&window_id))
+            .ok_or(Error::WindowNotFound)?;
+        owner.remove_window(window_id)
     }
 
     pub fn split(&mut self, direction: Axis) -> Result<()> {
@@ -124,7 +142,7 @@ impl PhysicalDisplay {
         self.logical_displays.contains_key(&logical_id)
     }
 
-    pub fn create_logical_display(&mut self, logical_id: LogicalDisplayId) {
+    pub(super) fn create_logical_display(&mut self, logical_id: LogicalDisplayId) {
         self.logical_displays.insert(
             logical_id,
             LogicalDisplay::new(self.bounds, self.config.into()),

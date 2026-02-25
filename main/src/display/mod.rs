@@ -1,5 +1,6 @@
 mod logical;
 mod physical;
+mod tests;
 
 use crate::container;
 use crate::container::Axis;
@@ -40,8 +41,34 @@ impl Displays {
             .split(axis)
     }
 
+    pub fn set_active_physical_display(&mut self, id: PhysicalDisplayId) {
+        self.active_physical_display_id = Some(id);
+    }
+
     pub fn physical_displays(&self) -> &HashMap<PhysicalDisplayId, PhysicalDisplay> {
         &self.physical_displays
+    }
+
+    pub fn switch_logical_display(
+        &mut self,
+        pid: PhysicalDisplayId,
+        new_lid: LogicalDisplayId,
+    ) -> Result<Option<LogicalDisplayId>> {
+        let old_lid = self
+            .physical_displays
+            .get(&pid)
+            .unwrap()
+            .active_logical_id();
+        let removed = self
+            .physical_displays
+            .get_mut(&pid)
+            .unwrap()
+            .switch_to(new_lid)?;
+        if removed {
+            self.active_logical_display_ids.remove(&old_lid);
+            return Ok(Some(old_lid));
+        }
+        Ok(None)
     }
 
     pub fn next_logical_display_id(&mut self, pid: PhysicalDisplayId) -> Option<LogicalDisplayId> {
@@ -78,9 +105,32 @@ impl Displays {
             .active_logical_id()
     }
 
-    pub fn add_window(&mut self, window: Window) -> Result<LogicalDisplayId> {
-        let mut lid = self.active_logical_display_id();
+    pub fn create_logical_display(
+        &mut self,
+        pid: PhysicalDisplayId,
+        lid: LogicalDisplayId,
+    ) -> LogicalDisplayId {
+        assert!(!self.active_logical_display_ids.contains_key(&lid));
+
+        self.physical_displays
+            .get_mut(&pid)
+            .unwrap()
+            .create_logical_display(lid);
+
+        self.active_logical_display_ids.insert(lid, pid);
+
+        lid
+    }
+
+    pub fn physical_display_mut(&mut self, pid: PhysicalDisplayId) -> Option<&mut PhysicalDisplay> {
+        self.physical_displays.get_mut(&pid)
+    }
+
+    pub fn add_window(&mut self, window: Window) -> Result<AddWindowResult> {
+        let initial_lid = self.active_logical_display_id();
+        let mut lid = initial_lid;
         let pid = *self.active_logical_display_ids.get(&lid).unwrap();
+
         while let Err(e) = self
             .physical_displays
             .get_mut(&pid)
@@ -99,23 +149,42 @@ impl Displays {
             }
         }
 
-        Ok(lid)
+        if lid == initial_lid {
+            Ok(AddWindowResult::Active(lid))
+        } else {
+            Ok(AddWindowResult::Overflow(lid))
+        }
     }
 
     pub fn add_window_to_logical(&mut self, window: Window, lid: LogicalDisplayId) -> Result<()> {
-        let pid = *self.active_logical_display_ids.get(&lid).unwrap();
-
-        // If the logical exists, add to it, otherwise first create it on pd
-        let pd = self.physical_displays.get_mut(&pid).unwrap();
-
-        if let std::collections::hash_map::Entry::Vacant(e) =
-            self.active_logical_display_ids.entry(lid)
-        {
-            pd.create_logical_display(lid);
-            e.insert(pid);
+        // let pid = *self.active_logical_display_ids.get(&lid).unwrap();
+        //
+        // // If the logical exists, add to it, otherwise first create it on pd
+        // let pd = self.physical_displays.get_mut(&pid).unwrap();
+        //
+        // if !pd.has_logical_display(lid) {
+        //     pd.create_logical_display(lid);
+        // }
+        //
+        // pd.add_window_to_logical(window, lid)
+        // If the target LD doesn't exist yet, create it on the PD that owns the
+        // current active LD. Do NOT use active_physical_display_id directly —
+        // it can be stale if the window being moved was on a different PD.
+        if !self.active_logical_display_ids.contains_key(&lid) {
+            let pid = self
+                .physical_displays
+                .iter()
+                .find(|(_, pd)| pd.has_logical_display(self.active_logical_display_id()))
+                .map(|(pid, _)| *pid)
+                .unwrap(); // active LD always has an owner
+            self.create_logical_display(pid, lid);
         }
 
-        pd.add_window_to_logical(window, lid)
+        let pid = *self.active_logical_display_ids.get(&lid).unwrap();
+        self.physical_displays
+            .get_mut(&pid)
+            .unwrap()
+            .add_window_to_logical(window, lid)
     }
 
     pub fn remove_window(
@@ -141,6 +210,11 @@ impl Displays {
             .get_mut(&self.active_physical_display_id.unwrap())
             .unwrap()
     }
+}
+
+pub enum AddWindowResult {
+    Active(LogicalDisplayId),
+    Overflow(LogicalDisplayId),
 }
 
 #[cfg(test)]

@@ -162,6 +162,12 @@ impl LogicalDisplay {
         }
     }
 
+    pub fn set_focused_window(&mut self, window_id: WindowId) {
+        if self.window_ids().contains(&window_id) {
+            self.focused_window = Some(window_id);
+        }
+    }
+
     pub fn remove_window(&mut self, window_id: WindowId) -> Result<Option<WindowId>> {
         let removed = self
             .root

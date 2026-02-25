@@ -124,7 +124,7 @@ impl Bounds {
                 ..self
             },
             Direction::Right => Self {
-                // x: self.x + amount,
+                x: self.x + amount,
                 width: self.width - amount,
                 ..self
             },

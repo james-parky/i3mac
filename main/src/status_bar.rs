@@ -81,8 +81,10 @@ impl StatusBar {
     }
 
     pub fn add_logical_id(&mut self, logical_id: LogicalDisplayId) {
-        self.logical_ids.push(logical_id);
-        self.logical_ids.sort();
+        if !self.logical_ids.contains(&logical_id) {
+            self.logical_ids.push(logical_id);
+            self.logical_ids.sort();
+        }
     }
 
     pub fn close(&mut self) {

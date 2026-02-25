@@ -287,7 +287,6 @@ impl Container {
             ..
         } = self
         {
-            // Try to remove child directly
             if let Some(pos) = children
                 .iter()
                 .position(|c| matches!(c, Container::Leaf { window, .. } if window.id == window_id))
@@ -311,12 +310,36 @@ impl Container {
                 }
             }
 
-            // Recurse into children
+            let mut found_id: Option<WindowId> = None;
             for child in children.iter_mut() {
                 if let Some(id) = child.remove_window(window_id, padding)? {
-                    children.retain(|c| !matches!(c, Container::Empty { .. }));
-                    return Ok(Some(id));
+                    found_id = Some(id);
+                    break;
                 }
+            }
+
+            if let Some(id) = found_id {
+                // Drop now empty kids
+                children.retain(|c| !matches!(c, Container::Empty { .. }));
+
+                let saved_bounds = *bounds;
+                let saved_axis = *axis;
+                let n = children.len();
+
+                if n == 0 {
+                    *self = Container::Empty {
+                        bounds: saved_bounds,
+                    };
+                } else {
+                    let new_bounds = spread_bounds_along_axis(saved_bounds, saved_axis, n, padding);
+                    if let Container::Split { children, .. } = self {
+                        for (child, b) in children.iter_mut().zip(new_bounds) {
+                            child.resize(b, padding)?;
+                        }
+                    }
+                }
+
+                return Ok(Some(id));
             }
 
             Ok(None)
@@ -477,15 +500,48 @@ impl Container {
         padding: f64,
     ) -> Result<()> {
         if let Container::Split { children, .. } = self {
-            let grow_idx = focused_idx;
-            let shrink_idx = if focused_idx == 0 { 1 } else { focused_idx - 1 };
-            let new_grow_bounds = children[grow_idx].get_bounds().grow(direction, amount);
-            let new_shrink_bounds = children[shrink_idx]
-                .get_bounds()
-                .shrink(direction.opposite(), amount);
+            let neighbour_idx = if focused_idx == 0 { 1 } else { focused_idx - 1 };
 
-            children[grow_idx].resize(new_grow_bounds, padding)?;
-            children[shrink_idx].resize(new_shrink_bounds, padding)?;
+            let (left_idx, right_idx) = if neighbour_idx < focused_idx {
+                (neighbour_idx, focused_idx)
+            } else {
+                (focused_idx, neighbour_idx)
+            };
+
+            let lb = children[left_idx].get_bounds();
+            let rb = children[right_idx].get_bounds();
+
+            let delta: f64 = match direction {
+                Direction::Left | Direction::Up => -amount,
+                Direction::Right | Direction::Down => amount,
+            };
+
+            // Arbitrary reasonable constant that stop windows getting too
+            // small. When this value is too small, the OS doesn't let the
+            // smaller window get smaller, but this code will make the larger
+            // window get larger and thus they overlap.
+            const MIN_SIZE: f64 = 200.0;
+            let new_edge = (rb.x + delta)
+                .max(lb.x + MIN_SIZE)
+                .min(rb.x + rb.width - MIN_SIZE);
+
+            if (new_edge - rb.x).abs() < 1.0 {
+                println!("resize blocked");
+                return Ok(());
+            }
+
+            let new_lb = Bounds {
+                width: new_edge - lb.x,
+                ..lb
+            };
+            let new_rb = Bounds {
+                x: new_edge,
+                width: rb.x + rb.width - new_edge,
+                ..rb
+            };
+
+            children[left_idx].resize(new_lb, padding)?;
+            children[right_idx].resize(new_rb, padding)?;
         }
         Ok(())
     }
@@ -1172,5 +1228,141 @@ mod tests {
             assert!(approx(bh.width, bv.height));
             assert!(approx(bh.height, bv.width));
         }
+    }
+
+    fn two_window_split() -> (Container, WindowId, WindowId) {
+        let mut root = Container::Empty {
+            bounds: Bounds {
+                x: 0.0,
+                y: 0.0,
+                width: 900.0,
+                height: 600.0,
+            },
+        };
+        let a = WindowId::from(1u32);
+        let b = WindowId::from(2u32);
+        root.add_window(
+            Window {
+                id: a,
+                min_width: 0.0,
+                min_height: 0.0,
+            },
+            0.0,
+        )
+        .unwrap();
+        root.add_window(
+            Window {
+                id: b,
+                min_width: 0.0,
+                min_height: 0.0,
+            },
+            0.0,
+        )
+        .unwrap();
+        (root, a, b)
+    }
+
+    /// After a nested split's only window is removed, the sibling of that nested
+    /// split should expand to fill the whole parent — not keep its old half-width.
+    ///
+    /// Scenario
+    /// --------
+    ///   root (H-split, 900 wide)
+    ///   ├── leaf A  (450 wide)          ← stays
+    ///   └── inner (H-split, 450 wide)
+    ///       └── leaf B  (450 wide)     ← removed; inner collapses to Empty
+    ///
+    /// After removal of B:
+    ///   root should collapse to a single-child split (or Empty→leaf)
+    ///   and A's bounds should span the full 900 width.
+    #[test]
+    fn remove_nested_window_rebalances_parent() {
+        let (mut root, a, b) = two_window_split();
+
+        // Split leaf B into its own inner split (simulates user pressing split).
+        // parent_leaf_of_window_mut returns the Leaf itself; calling split() on it
+        // converts it to a Split containing that leaf.
+        root.parent_leaf_of_window_mut(b)
+            .unwrap()
+            .split(Axis::Horizontal)
+            .unwrap();
+
+        // Sanity: both windows still present.
+        assert!(root.contains_window(a));
+        assert!(root.contains_window(b));
+
+        // Remove B — it now lives inside the inner split.
+        let removed = root.remove_window(b, 0.0).unwrap();
+        assert_eq!(removed, Some(b), "B must be reported as removed");
+        assert!(!root.contains_window(b));
+
+        // A must still exist.
+        assert!(root.contains_window(a));
+
+        // A's bounds must now span the full 900 px, not stay at the old 450.
+        let bounds_map = root.window_bounds_by_id();
+        let a_bounds = bounds_map[&a];
+        assert!(
+            approx(a_bounds.width, 900.0),
+            "after nested removal, surviving window must expand to full width; got {}",
+            a_bounds.width
+        );
+    }
+
+    /// Simpler case: direct removal from a two-child split still works after the
+    /// refactor (regression guard for the direct path).
+    #[test]
+    fn remove_direct_child_rebalances_sibling() {
+        let (mut root, a, b) = two_window_split();
+
+        root.remove_window(a, 0.0).unwrap();
+
+        assert!(!root.contains_window(a));
+        assert!(root.contains_window(b));
+
+        let bounds_map = root.window_bounds_by_id();
+        let b_bounds = bounds_map[&b];
+        assert!(
+            approx(b_bounds.width, 900.0),
+            "surviving window must fill full width after direct removal; got {}",
+            b_bounds.width
+        );
+    }
+
+    /// Three-window split: removing the middle window rebalances the outer two to
+    /// each take half the space (no ghost third slot).
+    #[test]
+    fn remove_middle_of_three_no_ghost_slot() {
+        let mut root = Container::Empty {
+            bounds: Bounds {
+                x: 0.0,
+                y: 0.0,
+                width: 900.0,
+                height: 600.0,
+            },
+        };
+        let a = WindowId::from(1u32);
+        let b = WindowId::from(2u32);
+        let c = WindowId::from(3u32);
+        for id in [a, b, c] {
+            root.add_window(
+                Window {
+                    id,
+                    min_width: 0.0,
+                    min_height: 0.0,
+                },
+                0.0,
+            )
+            .unwrap();
+        }
+
+        root.remove_window(b, 0.0).unwrap();
+
+        let bounds_map = root.window_bounds_by_id();
+        assert!(approx(bounds_map[&a].width, 450.0));
+        assert!(approx(bounds_map[&c].width, 450.0));
+        // The two survivors must not overlap and must tile perfectly.
+        assert!(approx(bounds_map[&a].x, 0.0));
+        assert!(approx(bounds_map[&c].x, 450.0));
     }
 }

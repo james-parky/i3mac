@@ -81,8 +81,8 @@ impl Default for CGSize {
     fn default() -> Self {
         // Completely arbitrary
         CGSize {
-            width: 800.0,
-            height: 200.0,
+            width: 0.0,
+            height: 0.0,
         }
     }
 }
