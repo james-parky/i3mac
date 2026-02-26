@@ -347,19 +347,6 @@ impl Container {
         }
     }
 
-    fn resize_children(&mut self, new_bounds: Bounds, padding: f64) -> Result<()> {
-        if let Self::Split { children, axis, .. } = self {
-            let new_children_bounds =
-                spread_bounds_along_axis(new_bounds, *axis, children.len(), padding);
-
-            for (child, child_bounds) in children.iter_mut().zip(new_children_bounds) {
-                child.resize(child_bounds, padding)?;
-            }
-        }
-
-        Ok(())
-    }
-
     pub fn parent_leaf_of_window_mut(&mut self, target: WindowId) -> Option<&mut Self> {
         match self {
             Self::Leaf { window, .. } if window.id == target => Some(self),
@@ -462,27 +449,6 @@ impl Container {
         }
     }
 
-    // New function to resize an entire child container
-    fn resize_child_container(
-        &mut self,
-        child_idx: usize,
-        direction: Direction,
-        amount: f64,
-        padding: f64,
-    ) -> Result<()> {
-        if let Self::Split { axis, .. } = self {
-            if axis.can_resize_in_direction(direction) {
-                // Resize at this level, treating child_idx as the focused container
-                self.resize_at_split(child_idx, direction, amount, padding)
-            } else {
-                // Still wrong direction, can't resize here
-                Err(Error::CannotResizeRoot)
-            }
-        } else {
-            Err(Error::CannotResizeRoot)
-        }
-    }
-
     fn resize_at_split(
         &mut self,
         focused_idx: usize,
@@ -551,6 +517,16 @@ impl Container {
             Self::Empty { bounds } => *bounds,
             Self::Leaf { bounds, .. } => *bounds,
             Self::Split { bounds, .. } => *bounds,
+        }
+    }
+
+    pub(super) fn find_window(&self, target: WindowId) -> Option<WindowId> {
+        match self {
+            Self::Leaf { window, .. } if window.id == target => Some(window.id),
+            Self::Split { children, .. } => {
+                children.iter().find_map(|child| child.find_window(target))
+            }
+            _ => None,
         }
     }
 }
@@ -644,18 +620,6 @@ mod tests {
             padding: 0.0,
             axis,
             children: window_ids.iter().map(|id| dummy_leaf(*id)).collect(),
-        }
-    }
-
-    impl Container {
-        pub(super) fn find_window(&self, target: WindowId) -> Option<WindowId> {
-            match self {
-                Self::Leaf { window, .. } if window.id == target => Some(window.id),
-                Self::Split { children, .. } => {
-                    children.iter().find_map(|child| child.find_window(target))
-                }
-                _ => None,
-            }
         }
     }
 

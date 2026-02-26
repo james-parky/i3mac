@@ -77,6 +77,10 @@ impl LogicalDisplay {
         }
     }
 
+    pub fn focused_window(&self) -> Option<WindowId> {
+        self.focused_window
+    }
+
     // In order to switch focus in some direction:
     //  - Create a list of all window, sorted by either x or y position, based
     //    on the given direction.

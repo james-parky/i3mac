@@ -29,9 +29,14 @@ impl Displays {
             .map(|(pid, _)| *pid)
     }
 
-    pub fn focus_display(&mut self, lid: LogicalDisplayId) {
+    pub fn focus_display(&mut self, lid: LogicalDisplayId) -> WindowId {
         let pid = *self.active_logical_display_ids.get(&lid).unwrap();
         self.active_physical_display_id = Some(pid);
+        self.physical_displays
+            .get(&pid)
+            .unwrap()
+            .focused_window()
+            .unwrap()
     }
 
     pub fn split(&mut self, axis: Axis) -> Result<()> {

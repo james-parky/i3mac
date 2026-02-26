@@ -220,4 +220,11 @@ impl PhysicalDisplay {
             .ok_or(Error::DisplayNotFound)?
             .shift_focus(direction)
     }
+
+    pub fn focused_window(&self) -> Option<WindowId> {
+        self.logical_displays
+            .get(&self.active_logical_id)
+            .unwrap()
+            .focused_window()
+    }
 }

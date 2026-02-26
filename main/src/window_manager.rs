@@ -452,10 +452,13 @@ impl WindowManager {
 
     fn handle_focus_shift(&mut self, direction: Direction) -> Result<()> {
         ShiftFocusInDirectionKeyCommand(direction).log(&mut self.logger);
-        self.displays
+        let newly_focussed = self
+            .displays
             .active_physical_display_mut()
-            .shift_focus(direction)
-            .map(|_| ())
+            .shift_focus(direction)?;
+
+        let window = self.windows.get_mut(&newly_focussed).unwrap();
+        window.ax().try_focus().map_err(Error::AxUi)
     }
 
     /// Move the currently focused window from one logical display to another.
@@ -496,7 +499,13 @@ impl WindowManager {
 
         self.displays.add_window_to_logical(window, target)?;
 
-        self.displays.focus_display(target);
+        let focused = self.displays.focus_display(target);
+        self.windows
+            .get_mut(&focused)
+            .unwrap()
+            .ax()
+            .try_focus()
+            .map_err(Error::AxUi)?;
 
         self.apply_layout()?;
 
@@ -578,7 +587,7 @@ impl WindowManager {
             }
         }
 
-        self.displays.focus_display(new_lid);
+        let focused = self.displays.focus_display(new_lid);
 
         let new_window_ids: Vec<_> = self
             .displays
@@ -605,6 +614,14 @@ impl WindowManager {
 
         self.apply_layout()?;
         self.update_status_bars();
+
+        self.windows
+            .get_mut(&focused)
+            .unwrap()
+            .ax()
+            .try_focus()
+            .map_err(Error::AxUi)?;
+
         Ok(())
     }
 }
