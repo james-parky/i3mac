@@ -1,4 +1,4 @@
-use crate::display::{Displays, LogicalDisplayId};
+use crate::display::{Displays, LogicalDisplayId, PhysicalDisplayId};
 use crate::status_bar::StatusBar;
 use crate::{
     container, display,
@@ -72,6 +72,7 @@ pub(super) struct WindowManager {
     windows: HashMap<WindowId, Window>,
     displays: Displays,
     floating_windows: HashSet<core_graphics::Window>,
+    minimised_windows: HashSet<WindowId>,
     logger: Logger,
     config: Config,
     status_bars: HashMap<DisplayId, StatusBar>,
@@ -95,6 +96,7 @@ impl WindowManager {
             windows: Default::default(),
             displays: Default::default(),
             floating_windows: Default::default(),
+            minimised_windows: Default::default(),
             logger,
             config,
             status_bars: Default::default(),
@@ -221,6 +223,12 @@ impl WindowManager {
                 display_id,
                 window_id,
             } => {
+                if self.minimised_windows.contains(&window_id) {
+                    // MacOS registers a CG window removed event when the application is minimised.
+                    // If its a window we intentionally minimised, don't actually remove it
+                    return;
+                }
+
                 ReceivedWindowRemovedEvent(display_id, window_id).log(&mut self.logger);
 
                 if let Err(e) = self.handle_window_removed(display_id, window_id) {
@@ -499,13 +507,14 @@ impl WindowManager {
 
         self.displays.add_window_to_logical(window, target)?;
 
-        let focused = self.displays.focus_display(target);
-        self.windows
-            .get_mut(&focused)
-            .unwrap()
-            .ax()
-            .try_focus()
-            .map_err(Error::AxUi)?;
+        if let Some(focused) = self.displays.focus_display(target) {
+            self.windows
+                .get_mut(&focused)
+                .unwrap()
+                .ax()
+                .try_focus()
+                .map_err(Error::AxUi)?;
+        }
 
         self.apply_layout()?;
 
@@ -536,32 +545,50 @@ impl WindowManager {
             return Ok(());
         }
 
-        // Find which PD owns the current active LD (always exists).
         let current_pid = *self
             .displays
             .physical_displays()
             .iter()
-            .find(|(_, pd)| pd.has_logical_display(current_lid))
+            .find(|&(_, &ref pd)| pd.has_logical_display(current_lid))
             .map(|(pid, _)| pid)
             .unwrap();
 
-        // Find which PD owns the target LD. If none, create it on the current PD.
-        let target_pid = self
+        let target_pid_exists = self
             .displays
             .physical_displays()
             .iter()
-            .find(|(_, pd)| pd.has_logical_display(new_lid))
-            .map(|(pid, _)| *pid)
-            .unwrap_or_else(|| {
-                // create_logical_display now takes the specific lid we want.
-                self.displays.create_logical_display(current_pid, new_lid);
-                current_pid
-            });
+            .find(|&(_, &ref pd)| pd.has_logical_display(new_lid))
+            .map(|(&pid, _)| pid);
 
+        let target_pid = target_pid_exists.unwrap_or(current_pid);
+        let target_exists = target_pid_exists.is_some();
         let same_pd = current_pid == target_pid;
 
-        // Collect the current LD's windows before the switch.
-        let current_window_ids: Vec<_> = self
+        println!("target_pid {target_pid}, current_pid: {current_pid}, same_pd: {same_pd}");
+
+        // if target_exists && !same_pd {
+        //     let target_pid_active_lid = self
+        //         .displays
+        //         .physical_displays()
+        //         .get(&target_pid)
+        //         .unwrap()
+        //         .active_logical_id();
+        //
+        //     if target_pid_active_lid == new_lid {
+        //         if let Some(focused) = self.displays.focus_display(new_lid) {
+        //             self.windows
+        //                 .get_mut(&focused)
+        //                 .unwrap()
+        //                 .ax()
+        //                 .try_focus()
+        //                 .map_err(Error::AxUi)?;
+        //         }
+        //         self.update_status_bars();
+        //         return Ok(());
+        //     }
+        // }
+
+        let current_ld_window_ids = self
             .displays
             .physical_displays()
             .get(&current_pid)
@@ -570,42 +597,76 @@ impl WindowManager {
             .unwrap()
             .window_ids()
             .into_iter()
-            .collect();
+            .collect::<Vec<_>>();
 
         if same_pd {
-            for wid in &current_window_ids {
-                if let Some(w) = self.windows.get_mut(wid) {
-                    w.ax().minimise().map_err(Error::AxUi)?;
-                }
+            for wd in &current_ld_window_ids {
+                self.minimised_windows.insert(*wd);
+                self.windows
+                    .get_mut(&wd)
+                    .unwrap()
+                    .ax()
+                    .minimise()
+                    .map_err(Error::AxUi)?;
+            }
+        } else {
+            let target_current_window_ids = self
+                .displays
+                .physical_displays()
+                .get(&target_pid)
+                .unwrap()
+                .active_logical_display()
+                .unwrap()
+                .window_ids()
+                .into_iter()
+                .collect::<Vec<_>>();
+
+            for wid in &target_current_window_ids {
+                self.minimised_windows.insert(*wid);
+                self.windows
+                    .get_mut(wid)
+                    .unwrap()
+                    .ax()
+                    .minimise()
+                    .map_err(Error::AxUi)?;
             }
         }
 
-        let removed_lid = self.displays.switch_logical_display(target_pid, new_lid)?;
-        if let Some(dead_lid) = removed_lid {
-            if let Some(sb) = self.status_bars.get_mut(&DisplayId::from(target_pid)) {
-                sb.remove_logical_id(dead_lid);
-            }
+        if !target_exists {
+            self.displays.create_logical_display(current_pid, new_lid);
         }
 
-        let focused = self.displays.focus_display(new_lid);
+        self.displays.switch_logical_display(target_pid, new_lid);
+
+        if same_pd && current_ld_window_ids.is_empty() {
+            // Empty LD will already have been removed by DM
+            self.status_bars
+                .get_mut(&DisplayId::from(current_pid))
+                .unwrap()
+                .remove_logical_id(current_lid);
+        }
 
         let new_window_ids: Vec<_> = self
             .displays
             .physical_displays()
             .get(&target_pid)
             .unwrap()
-            .active_logical_display()
+            .logical(new_lid)
             .unwrap()
             .window_ids()
             .into_iter()
             .collect();
 
-        if same_pd {
-            for wid in &new_window_ids {
-                if let Some(w) = self.windows.get_mut(wid) {
-                    w.ax().unminimise().map_err(Error::AxUi)?;
-                }
-            }
+        println!("window on target id to focus: {new_window_ids:?}");
+
+        for wid in &new_window_ids {
+            self.minimised_windows.remove(wid);
+            self.windows
+                .get_mut(wid)
+                .unwrap()
+                .ax()
+                .unminimise()
+                .map_err(Error::AxUi)?;
         }
 
         if let Some(sb) = self.status_bars.get_mut(&DisplayId::from(target_pid)) {
@@ -615,12 +676,14 @@ impl WindowManager {
         self.apply_layout()?;
         self.update_status_bars();
 
-        self.windows
-            .get_mut(&focused)
-            .unwrap()
-            .ax()
-            .try_focus()
-            .map_err(Error::AxUi)?;
+        if let Some(focused) = self.displays.focus_display(new_lid) {
+            self.windows
+                .get_mut(&focused)
+                .unwrap()
+                .ax()
+                .try_focus()
+                .map_err(Error::AxUi)?;
+        }
 
         Ok(())
     }
@@ -636,23 +699,12 @@ impl WindowManager {
 // TODO: Make the terminal application used configurable
 fn open_terminal() {
     use std::process::Command;
-    let _ = Command::new("open")
-        .arg("-n")
-        .arg("-a")
-        .arg("Terminal")
-        .status();
-
     let apple_script = r#"
-        tell application "System Events"
-            tell process "Terminal"
-                set windowList to every window
-                if (count of windowList) > 0 then
-                    set frontWindow to item 1 of windowList
-                    if value of attribute "AXMinimized" of frontWindow is true then
-                        set value of attribute "AXMinimized" of frontWindow to false
-                    end if
-                end if
-            end tell
+        tell application "Terminal"
+            do script ""
+            set w to front window
+            set miniaturized of w to false
+            activate
         end tell
     "#;
 

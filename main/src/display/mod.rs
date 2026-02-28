@@ -29,14 +29,10 @@ impl Displays {
             .map(|(pid, _)| *pid)
     }
 
-    pub fn focus_display(&mut self, lid: LogicalDisplayId) -> WindowId {
+    pub fn focus_display(&mut self, lid: LogicalDisplayId) -> Option<WindowId> {
         let pid = *self.active_logical_display_ids.get(&lid).unwrap();
         self.active_physical_display_id = Some(pid);
-        self.physical_displays
-            .get(&pid)
-            .unwrap()
-            .focused_window()
-            .unwrap()
+        self.physical_displays.get(&pid).unwrap().focused_window()
     }
 
     pub fn split(&mut self, axis: Axis) -> Result<()> {
@@ -54,26 +50,41 @@ impl Displays {
         &self.physical_displays
     }
 
-    pub fn switch_logical_display(
-        &mut self,
-        pid: PhysicalDisplayId,
-        new_lid: LogicalDisplayId,
-    ) -> Result<Option<LogicalDisplayId>> {
+    pub fn remove_logical_display(&mut self, logical_id: LogicalDisplayId) {
+        let pid = self.active_logical_display_ids.get(&logical_id).unwrap();
+        self.physical_displays
+            .get_mut(&pid)
+            .unwrap()
+            .remove_logical_display(logical_id);
+    }
+
+    pub fn switch_logical_display(&mut self, pid: PhysicalDisplayId, new_lid: LogicalDisplayId) {
         let old_lid = self
             .physical_displays
             .get(&pid)
             .unwrap()
             .active_logical_id();
-        let removed = self
-            .physical_displays
+
+        self.physical_displays
             .get_mut(&pid)
             .unwrap()
-            .switch_to(new_lid)?;
-        if removed {
+            .switch_to(new_lid);
+
+        let old_empty = self
+            .physical_displays
+            .get(&pid)
+            .unwrap()
+            .logical(old_lid)
+            .map(|ld| ld.window_ids().is_empty())
+            .unwrap_or(false);
+
+        if old_empty {
+            self.physical_displays
+                .get_mut(&pid)
+                .unwrap()
+                .remove_logical_display(old_lid);
             self.active_logical_display_ids.remove(&old_lid);
-            return Ok(Some(old_lid));
         }
-        Ok(None)
     }
 
     pub fn next_logical_display_id(&mut self, pid: PhysicalDisplayId) -> Option<LogicalDisplayId> {

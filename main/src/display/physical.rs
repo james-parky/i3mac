@@ -73,6 +73,10 @@ impl PhysicalDisplay {
         }
     }
 
+    pub fn logical(&self, lid: LogicalDisplayId) -> Option<&LogicalDisplay> {
+        self.logical_displays.get(&lid)
+    }
+
     pub fn set_focused_window(&mut self, window_id: WindowId) {
         if let Some(lid) = self.logical_displays.get_mut(&self.active_logical_id) {
             lid.set_focused_window(window_id);
@@ -194,23 +198,11 @@ impl PhysicalDisplay {
     //    3. Focus the target logical display
     //    4. If the previous logical display now has no windows, delete it
     //    5. Update the physical display's status bar
-    pub fn switch_to(&mut self, logical_id: LogicalDisplayId) -> Result<bool> {
-        if logical_id == self.active_logical_id {
-            return Ok(false);
+    pub fn switch_to(&mut self, logical_id: LogicalDisplayId) {
+        if logical_id != self.active_logical_id {
+            self.logical_displays.get(&self.active_logical_id).unwrap();
+            self.active_logical_id = logical_id;
         }
-
-        let current_logical = self.logical_displays.get(&self.active_logical_id).unwrap();
-
-        let mut removed = false;
-        // Remove the logical display if there are no windows left
-        if current_logical.window_ids().is_empty() {
-            self.logical_displays.remove(&self.active_logical_id);
-            removed = true;
-        }
-
-        self.active_logical_id = logical_id;
-
-        Ok(removed)
     }
 
     // Delegate focus shifting to the currently active logical display.

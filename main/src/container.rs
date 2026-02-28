@@ -402,7 +402,7 @@ impl Container {
                 bounds, padding: p, ..
             } => {
                 *bounds = new_bounds;
-                *p = padding;
+                // *p = padding;
             }
             Self::Split {
                 bounds,
@@ -410,11 +410,44 @@ impl Container {
                 axis,
                 padding: p,
             } => {
+                let old_bounds = *bounds;
                 *bounds = new_bounds;
+                // *p = padding;
 
-                let child_bounds = spread_bounds_along_axis(new_bounds, *axis, children.len(), *p);
-                for (child, cb) in children.iter_mut().zip(child_bounds) {
-                    child.resize(cb, 0.0)?;
+                println!("old bounds {old_bounds:?}, new bounds {new_bounds:?}");
+
+                // let child_bounds = spread_bounds_along_axis(new_bounds, *axis, children.len(), *p);
+                // for (child, cb) in children.iter_mut().zip(child_bounds) {
+                //     child.resize(cb, 0.0)?;
+                // }
+                for child in children.iter_mut() {
+                    let cb = child.get_bounds();
+                    let new_cb = match axis {
+                        Axis::Horizontal => {
+                            let x_ratio = (cb.x - old_bounds.x) / old_bounds.width;
+                            let w_ratio = cb.width / old_bounds.width;
+                            Bounds {
+                                x: new_bounds.x + x_ratio * new_bounds.width,
+                                y: bounds.y + *p,
+                                width: w_ratio * new_bounds.width,
+                                height: bounds.height - 2.0 * *p,
+                            }
+                        }
+                        Axis::Vertical => {
+                            let y_ratio = (cb.y - old_bounds.y) / old_bounds.height;
+                            let h_ratio = cb.height / old_bounds.height;
+                            Bounds {
+                                x: bounds.x + *p,
+                                y: new_bounds.y + y_ratio * new_bounds.height,
+                                width: bounds.width - 2.0 * *p,
+                                height: h_ratio * new_bounds.height,
+                            }
+                        }
+                    };
+
+                    println!("old cb {cb:?} newcb {new_cb:?}");
+
+                    child.resize(new_cb, 0.0)?;
                 }
             }
         }
@@ -429,6 +462,7 @@ impl Container {
         amount: f64,
         padding: f64,
     ) -> Result<()> {
+        println!("resizing window {window_id:?} with padding: {padding}",);
         match self {
             Self::Empty { .. } => Err(Error::WindowNotFound),
             // TODO: better error
@@ -456,7 +490,7 @@ impl Container {
         amount: f64,
         padding: f64,
     ) -> Result<()> {
-        if let Container::Split { children, .. } = self {
+        if let Container::Split { children, axis, .. } = self {
             let neighbour_idx = if focused_idx == 0 { 1 } else { focused_idx - 1 };
 
             let (left_idx, right_idx) = if neighbour_idx < focused_idx {
@@ -478,22 +512,60 @@ impl Container {
             // smaller window get smaller, but this code will make the larger
             // window get larger and thus they overlap.
             const MIN_SIZE: f64 = 200.0;
-            let new_edge = (rb.x + delta)
-                .max(lb.x + MIN_SIZE)
-                .min(rb.x + rb.width - MIN_SIZE);
 
-            if (new_edge - rb.x).abs() < 1.0 {
-                return Ok(());
-            }
+            let (new_lb, new_rb) = match axis {
+                Axis::Vertical => {
+                    let mid = lb.y + lb.height + padding / 2.0;
 
-            let new_lb = Bounds {
-                width: new_edge - lb.x,
-                ..lb
-            };
-            let new_rb = Bounds {
-                x: new_edge,
-                width: rb.x + rb.width - new_edge,
-                ..rb
+                    let new_mid = (mid + delta)
+                        .max(lb.y + MIN_SIZE)
+                        .min(lb.y + lb.height + rb.height - MIN_SIZE);
+
+                    if (new_mid - mid).abs() < 1.0 {
+                        return Ok(());
+                    }
+
+                    (
+                        Bounds {
+                            height: new_mid - lb.y - padding / 2.0,
+                            // height: new_edge - lb.y,
+                            ..lb
+                        },
+                        Bounds {
+                            // y: new_edge,
+                            y: new_mid + padding / 2.0,
+                            // height: rb.y + rb.height - new_edge,
+                            height: rb.y + rb.height - new_mid - padding / 2.0,
+                            ..rb
+                        },
+                    )
+                }
+                Axis::Horizontal => {
+                    let mid = lb.x + lb.width + padding / 2.0;
+
+                    let new_mid = (mid + delta)
+                        .max(lb.x + MIN_SIZE)
+                        .min(lb.x + lb.width + rb.width - MIN_SIZE);
+
+                    if (new_mid - mid).abs() < 1.0 {
+                        return Ok(());
+                    }
+
+                    (
+                        Bounds {
+                            // width: new_edge - lb.x,
+                            width: new_mid - lb.x - padding / 2.0,
+                            ..lb
+                        },
+                        Bounds {
+                            // x: new_edge,
+                            x: new_mid + padding / 2.0,
+                            // width: rb.x + rb.width - new_edge,
+                            width: rb.x + rb.width - new_mid - padding / 2.0,
+                            ..rb
+                        },
+                    )
+                }
             };
 
             children[left_idx].resize(new_lb, padding)?;
@@ -517,6 +589,14 @@ impl Container {
             Self::Empty { bounds } => *bounds,
             Self::Leaf { bounds, .. } => *bounds,
             Self::Split { bounds, .. } => *bounds,
+            // Self::Split {
+            //     bounds, padding, ..
+            // } => Bounds {
+            //     x: bounds.x + padding,
+            //     y: bounds.y + padding,
+            //     width: bounds.width - padding * 2.0,
+            //     height: bounds.height - padding * 2.0,
+            // },
         }
     }
 
