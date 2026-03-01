@@ -21,7 +21,7 @@ use crate::{
 };
 use core_foundation::{CFRunLoopGetCurrent, CFRunLoopRunInMode, kCFRunLoopDefaultMode};
 use core_graphics::{Bounds, Direction, DisplayId, KeyCommand, KeyboardHandler, WindowId};
-use foundation::{WorkspaceEvent, WorkspaceObserver};
+use foundation::{Colour, WorkspaceEvent, WorkspaceObserver};
 use log::Message::{WindowAdded, WindowRemoved};
 use std::{
     collections::{HashMap, HashSet},
@@ -125,7 +125,8 @@ impl WindowManager {
             }
 
             let lids = wm.displays.logical_ids(id.into());
-            let status_bar = StatusBar::new(lids.into_iter().collect(), cg_display.bounds);
+            let status_bar =
+                StatusBar::new(lids.into_iter().collect(), cg_display.bounds, Colour::Clear);
             wm.status_bars.insert(id, status_bar);
         }
 
@@ -673,9 +674,6 @@ impl WindowManager {
             sb.add_logical_id(new_lid);
         }
 
-        self.apply_layout()?;
-        self.update_status_bars();
-
         if let Some(focused) = self.displays.focus_display(new_lid) {
             self.windows
                 .get_mut(&focused)
@@ -685,6 +683,8 @@ impl WindowManager {
                 .map_err(Error::AxUi)?;
         }
 
+        self.apply_layout()?;
+        self.update_status_bars();
         Ok(())
     }
 }

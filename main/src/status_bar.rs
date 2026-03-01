@@ -1,7 +1,21 @@
 use crate::{display::LogicalDisplayId, sys_info::SysInfo};
 use core_graphics::Bounds;
-use foundation::{Application, Colour, Label, Window};
+use foundation::{Application, Colour, IdLabel, Label, Window};
 
+// Ideas:
+//  - Transparent like MacOS status bar at the top of the screen
+//  - White text on darker wallpapers, light text on darker
+//  - All items become slightly transparent when the display is not focussed
+//
+//  - Logical display ids, distinguish active using filled in box, outlines for
+//    not currently focussed
+//  - Wifi strength and IPaddr, v4 + v6
+//  - Ethernet connectivity,
+//  - Current disk usage
+//  - Current total cpu load
+//  - Current mem usage / total
+//
+//  - kqueue events to see if wifi etc has been changed and timer fd for cpu/mem
 pub struct StatusBar {
     logical_ids: Vec<LogicalDisplayId>,
     window: Window,
@@ -11,9 +25,11 @@ pub struct StatusBar {
 impl StatusBar {
     pub const HEIGHT: f64 = 25.0;
     const ID_START_X: f64 = 0.0;
-    const ID_WIDTH: f64 = 20.0;
+    const ID_WIDTH: f64 = 25.0;
+    const ACTIVE_OPACITY: f64 = 1.0;
+    const INACTIVE_OPACITY: f64 = 0.6;
 
-    pub fn new(logical_ids: Vec<LogicalDisplayId>, bounds: Bounds) -> Self {
+    pub fn new(logical_ids: Vec<LogicalDisplayId>, bounds: Bounds, background: Colour) -> Self {
         let mut logical_ids = logical_ids;
         logical_ids.sort();
 
@@ -29,7 +45,7 @@ impl StatusBar {
         };
 
         let mut window = Window::new(window_bounds);
-        window.set_background_colour(Colour::Black);
+        window.set_background_colour(background);
 
         let sys_info = SysInfo::new();
 
@@ -52,17 +68,17 @@ impl StatusBar {
 
         for (i, id) in logical_ids.iter().enumerate() {
             let display_id_bounds = Bounds {
-                x: Self::ID_START_X + (i as f64 * Self::ID_WIDTH),
-                y: 0.0,
-                height: Self::HEIGHT,
-                width: Self::ID_WIDTH,
+                x: Self::ID_START_X + (i as f64 * Self::ID_WIDTH) + 2.5,
+                y: 2.5,
+                height: Self::HEIGHT - 5.0,
+                width: Self::ID_WIDTH - 5.0,
             };
 
             let colour = Colour::White;
 
             // TODO: handle i3-ism of 0 == 10?
 
-            let id_label = Self::id_label(*id, display_id_bounds, colour);
+            let id_label = IdLabel::new_inactive(display_id_bounds, (*id).to_string());
             window.add_element_to_content_view(id_label);
         }
 
@@ -74,6 +90,16 @@ impl StatusBar {
             window,
             width: bounds.width,
         }
+    }
+
+    pub fn set_active(&mut self, active: bool) {
+        let opacity = if active {
+            Self::ACTIVE_OPACITY
+        } else {
+            Self::INACTIVE_OPACITY
+        };
+
+        self.window.set_opacity(opacity);
     }
 
     pub fn remove_logical_id(&mut self, logical_id: LogicalDisplayId) {
@@ -92,23 +118,22 @@ impl StatusBar {
     }
 
     pub fn draw(&mut self, active_id: LogicalDisplayId) {
+        self.set_active(self.logical_ids.contains(&active_id));
         self.window.clear_content_view();
 
         for (i, id) in self.logical_ids.iter().enumerate() {
             let display_id_bounds = Bounds {
-                x: Self::ID_START_X + (i as f64 * Self::ID_WIDTH),
-                y: 0.0,
-                height: Self::HEIGHT,
-                width: Self::ID_WIDTH,
+                x: Self::ID_START_X + (i as f64 * Self::ID_WIDTH) + 2.5,
+                y: 2.5,
+                height: Self::HEIGHT - 5.0,
+                width: Self::ID_WIDTH - 5.0,
             };
 
-            let colour = if *id == active_id {
-                Colour::Blue
+            let id_label = if *id == active_id {
+                IdLabel::new_active(display_id_bounds, (*id).to_string())
             } else {
-                Colour::White
+                IdLabel::new_inactive(display_id_bounds, (*id).to_string())
             };
-
-            let id_label = Self::id_label(*id, display_id_bounds, colour);
             self.window.add_element_to_content_view(id_label);
         }
 
@@ -139,34 +164,18 @@ impl StatusBar {
     }
 
     fn ipv4_label(ipv4_addr: Option<String>, bounds: Bounds) -> Label {
-        let ipv4_addr_colour = if ipv4_addr.is_some() {
-            Colour::Green
-        } else {
-            Colour::Red
-        };
-
         Label::new(
             bounds,
             ipv4_addr.unwrap_or("W: down".to_string()),
-            ipv4_addr_colour,
+            Colour::White,
         )
     }
 
     fn ipv6_label(ipv6_addr: Option<String>, bounds: Bounds) -> Label {
-        let ipv6_addr_colour = if ipv6_addr.is_some() {
-            Colour::Green
-        } else {
-            Colour::Red
-        };
-
         Label::new(
             bounds,
             ipv6_addr.unwrap_or("no IPv6".to_string()),
-            ipv6_addr_colour,
+            Colour::White,
         )
-    }
-
-    fn id_label(display_id: LogicalDisplayId, bounds: Bounds, colour: Colour) -> Label {
-        Label::new(bounds, display_id.to_string(), colour)
     }
 }

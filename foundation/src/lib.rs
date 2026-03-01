@@ -1,8 +1,11 @@
 mod bits;
+mod id_label;
 mod label;
 mod observer;
+mod text_layer;
 mod window;
 
+pub use id_label::IdLabel;
 pub use label::Label;
 pub use observer::{WorkspaceEvent, WorkspaceObserver};
 pub use window::{Application, Window};
@@ -62,6 +65,7 @@ pub enum Colour {
     Red,
     Green,
     Blue,
+    Clear,
 }
 
 impl Colour {
@@ -73,6 +77,10 @@ impl Colour {
         }
     }
 
+    pub fn as_cg_colour(&self) -> *mut c_void {
+        unsafe { msg_send!(self.as_ns_colour(), sel("CGColor")) }
+    }
+
     #[must_use]
     const fn selector_name(&self) -> &'static str {
         match self {
@@ -81,6 +89,7 @@ impl Colour {
             Colour::Red => "redColor",
             Colour::Green => "greenColor",
             Colour::Blue => "blueColor",
+            Colour::Clear => "clearColor",
         }
     }
 }

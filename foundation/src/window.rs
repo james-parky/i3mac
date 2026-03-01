@@ -39,6 +39,14 @@ impl Window {
         }
     }
 
+    pub fn set_opacity(&mut self, opacity: f64) {
+        unsafe {
+            type SetOpacityFn = unsafe extern "C" fn(*mut c_void, *mut c_void, f64);
+            let set_opacity: SetOpacityFn = std::mem::transmute(objc_msgSend as *const ());
+            set_opacity(self.window, sel("setAlphaValue:"), opacity);
+        }
+    }
+
     pub fn clear_content_view(&mut self) {
         unsafe {
             let content_view = msg_send!(self.window, sel("contentView"));
