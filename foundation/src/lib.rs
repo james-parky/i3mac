@@ -1,15 +1,15 @@
-mod bits;
+pub mod bits;
 mod id_label;
 mod label;
-mod observer;
 mod text_layer;
 mod window;
 
 pub use id_label::IdLabel;
 pub use label::Label;
-pub use observer::{WorkspaceEvent, WorkspaceObserver};
 pub use window::{Application, Window};
 
+pub use bits::_NSConcreteStackBlock;
+pub use bits::objc_msgSend;
 use bits::{objc_getClass, sel_registerName};
 use std::{ffi::CString, os::raw::c_void};
 
@@ -48,13 +48,13 @@ macro_rules! msg_send_arg_type {
 }
 
 #[inline]
-pub(crate) unsafe fn class(name: &str) -> *mut c_void {
+pub unsafe fn class(name: &str) -> *mut c_void {
     let class_name = CString::new(name).unwrap();
     unsafe { objc_getClass(class_name.as_ptr()) }
 }
 
 #[inline]
-pub(crate) unsafe fn sel(name: &str) -> *mut c_void {
+pub unsafe fn sel(name: &str) -> *mut c_void {
     let selector_name = CString::new(name).unwrap();
     unsafe { sel_registerName(selector_name.as_ptr()) }
 }

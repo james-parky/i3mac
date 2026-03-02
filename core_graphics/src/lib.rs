@@ -4,9 +4,13 @@ mod error;
 mod keyboard;
 mod window;
 
-pub use bits::{CGPoint, CGRect, CGSize, CGWarpMouseCursorPosition, WindowId};
+pub use bits::{
+    CGEventGetFlags, CGEventGetIntegerValueField, CGEventRef, CGEventTapCreate, CGEventTapEnable,
+    CGEventTapProxy, CGPoint, CGRect, CGSize, CGWarpMouseCursorPosition, EventTapLocation,
+    EventTapOptions, EventTapPlacement, EventType, KEYBOARD_EVENT_KEYCODE, WindowId,
+};
 pub use error::Error;
-pub use keyboard::{Direction, KeyCommand, KeyboardHandler};
+pub use keyboard::*;
 pub use window::Window;
 pub type Result<T> = std::result::Result<T, Error>;
 pub use display::*;

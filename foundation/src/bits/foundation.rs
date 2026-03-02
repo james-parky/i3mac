@@ -21,5 +21,5 @@ unsafe extern "C" {
     ///
     /// This is a variadic function that must be called through
     /// `std::mem::transmute()`.
-    pub(crate) fn objc_msgSend();
+    pub fn objc_msgSend();
 }

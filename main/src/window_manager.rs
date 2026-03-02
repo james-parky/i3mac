@@ -1,11 +1,13 @@
-use crate::display::{Displays, LogicalDisplayId, PhysicalDisplayId};
+use crate::display::{Displays, LogicalDisplayId};
+use crate::event_loop::EventLoop;
+use crate::poll::{
+    AsKEvent, ChannelSource, Event, KeyboardHandler, Mux, Timer, WorkspaceEvent, WorkspaceObserver,
+};
 use crate::status_bar::StatusBar;
 use crate::{
     container, display,
     error::{Error, Result},
-    event_loop::Event,
-    event_loop::EventLoop,
-    log,
+    event_loop, log,
     log::Message::{
         FocusLogicalDisplayKeyCommand, MoveFocusedWindowToLogicalDisplayKeyCommand,
         OpenTerminalKeyCommand, ResizeWindowInDirectionKeyCommand, ShiftFocusInDirectionKeyCommand,
@@ -14,19 +16,17 @@ use crate::{
     },
     log::Message::{
         ReceivedKeyCommand, ReceivedWindowAddedEvent, ReceivedWindowFocusedEvent,
-        ReceivedWindowRemovedEvent, WindowFocused,
+        ReceivedWindowRemovedEvent,
     },
     log::{Level, Log, Logger},
     window::Window,
 };
 use core_foundation::{CFRunLoopGetCurrent, CFRunLoopRunInMode, kCFRunLoopDefaultMode};
-use core_graphics::{Bounds, Direction, DisplayId, KeyCommand, KeyboardHandler, WindowId};
-use foundation::{Colour, WorkspaceEvent, WorkspaceObserver};
-use log::Message::{WindowAdded, WindowRemoved};
-use std::{
-    collections::{HashMap, HashSet},
-    sync::mpsc::channel,
-};
+use core_graphics::{Direction, DisplayId, KeyCommand, WindowId};
+use foundation::Colour;
+use log::Message::WindowRemoved;
+use std::collections::{HashMap, HashSet};
+use std::time::Duration;
 
 #[derive(Default, Copy, Clone, Debug)]
 pub struct Config {
@@ -156,43 +156,53 @@ impl WindowManager {
     }
 
     pub(super) fn run(&mut self) -> Result<()> {
-        let (key_tx, key_rx) = channel::<KeyCommand>();
-        let keyboard = KeyboardHandler::new(key_tx).expect("failed to create keyboard handler");
+        let (keyboard_source, keyboard_sender) = ChannelSource::<KeyCommand>::new();
+        let (workspace_source, workspace_sender) = ChannelSource::<WorkspaceEvent>::new();
 
-        let mut event_loop = EventLoop::new(key_rx);
+        let keyboard_handler = KeyboardHandler::new(keyboard_sender).unwrap();
+        let _workspace_observer = WorkspaceObserver::new(workspace_sender);
+        let mut event_loop = EventLoop::new();
 
-        // Safety:
-        //  - The `run_loop` supplied to `KeyboardHandler::add_run_loop()` is valid
-        //    as it was returned by the library function `CFRunLoopGetCurrent()`.
-        unsafe { keyboard.add_to_run_loop(CFRunLoopGetCurrent(), kCFRunLoopDefaultMode) }
-            .expect("failed to add keyboard to run loop");
+        let timer = Timer {
+            id: 0,
+            interval: Duration::from_secs(15),
+        };
 
-        let (workspace_tx, workspace_rx) = channel::<WorkspaceEvent>();
-        let _workspace_observer = WorkspaceObserver::new(workspace_tx);
+        let mux = Mux::new().unwrap();
+        mux.add(&keyboard_source);
+        mux.add(&workspace_source);
+        mux.add(&timer);
+
+        unsafe {
+            keyboard_handler
+                .add_to_run_loop(CFRunLoopGetCurrent(), kCFRunLoopDefaultMode)
+                .unwrap();
+        }
         loop {
-            println!("windows: {:?}", self.windows.keys());
-            unsafe { CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.1, false) }
+            unsafe { CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.1, false) };
 
-            let mut should_poll_windows = false;
-            if let Ok(_event) = workspace_rx.try_recv() {
-                should_poll_windows = true;
-            }
-
-            let keyboard_events = event_loop.poll_keyboard();
-            if !keyboard_events.is_empty() {
-                should_poll_windows = true;
-                for event in keyboard_events {
-                    self.handle_event(event);
+            let events = mux.poll();
+            for event in events {
+                match event {
+                    Event::Readable(ident) if ident == keyboard_source.ident() => {
+                        for command in keyboard_source.drain() {
+                            self.handle_event(event_loop::Event::KeyCommand { command });
+                        }
+                    }
+                    Event::Readable(ident) if ident == workspace_source.ident() => {
+                        workspace_source.drain();
+                        for event in event_loop.poll_windows() {
+                            self.handle_event(event);
+                        }
+                    }
+                    Event::Timer(ident) if ident == timer.ident() => {
+                        println!("timer tick");
+                    }
+                    _ => {
+                        println!("spurious event");
+                    }
                 }
             }
-
-            if should_poll_windows {
-                for event in event_loop.poll_windows() {
-                    self.handle_event(event);
-                }
-            }
-
-            // self.reset_windows();
         }
     }
 
@@ -209,9 +219,9 @@ impl WindowManager {
     //     }
     // }
 
-    pub(super) fn handle_event(&mut self, event: Event) {
+    pub(super) fn handle_event(&mut self, event: event_loop::Event) {
         match event {
-            Event::WindowAdded { display_id, window } => {
+            event_loop::Event::WindowAdded { display_id, window } => {
                 ReceivedWindowAddedEvent(display_id, window.number()).log(&mut self.logger);
 
                 if let Err(e) = self.handle_window_added(display_id, window) {
@@ -220,7 +230,7 @@ impl WindowManager {
             }
             // TODO: Need to not trigger this from windows that disappear due to
             //       switching logical display
-            Event::WindowRemoved {
+            event_loop::Event::WindowRemoved {
                 display_id,
                 window_id,
             } => {
@@ -243,12 +253,12 @@ impl WindowManager {
             // } => {
             //     self.handle_display_added(display_id, display);
             // }
-            Event::KeyCommand { command } => {
+            event_loop::Event::KeyCommand { command } => {
                 ReceivedKeyCommand(command).log(&mut self.logger);
 
                 self.handle_key_command(command);
             }
-            Event::WindowFocused { window_id } => {
+            event_loop::Event::WindowFocused { window_id } => {
                 ReceivedWindowFocusedEvent(window_id).log(&mut self.logger);
                 if let Err(e) = self.handle_window_focus(window_id) {
                     eprintln!("failed to focus window: {e:?}");

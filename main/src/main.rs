@@ -3,6 +3,7 @@ mod display;
 mod error;
 mod event_loop;
 mod log;
+mod poll;
 mod status_bar;
 mod sys_info;
 mod window;

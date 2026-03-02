@@ -1,3 +1,4 @@
 mod foundation;
 
-pub(crate) use foundation::{_NSConcreteStackBlock, objc_getClass, objc_msgSend, sel_registerName};
+pub use foundation::{_NSConcreteStackBlock, objc_msgSend};
+pub(crate) use foundation::{objc_getClass, sel_registerName};

@@ -1,9 +1,10 @@
-use crate::{bits::_NSConcreteStackBlock, class, msg_send, sel};
+use crate::poll::ChannelSender;
+use foundation::{_NSConcreteStackBlock, class, msg_send, objc_msgSend, sel};
 use std::{ffi::CString, os::raw::c_void, sync::mpsc::Sender};
 
 pub struct WorkspaceObserver {
     observers: Vec<*mut c_void>,
-    _contexts: Vec<*mut (Sender<WorkspaceEvent>, WorkspaceEvent)>,
+    _contexts: Vec<*mut (ChannelSender<WorkspaceEvent>, WorkspaceEvent)>,
 }
 
 #[derive(Clone, Debug)]
@@ -14,7 +15,7 @@ pub enum WorkspaceEvent {
 }
 
 impl WorkspaceObserver {
-    pub fn new(sender: Sender<WorkspaceEvent>) -> Self {
+    pub fn new(sender: ChannelSender<WorkspaceEvent>) -> Self {
         let mut observers = Vec::new();
         let mut contexts = Vec::new();
 
@@ -60,9 +61,12 @@ impl WorkspaceObserver {
     unsafe fn register_notification(
         notification_center: *mut c_void,
         notification_name: &str,
-        sender: Sender<WorkspaceEvent>,
+        sender: ChannelSender<WorkspaceEvent>,
         event: WorkspaceEvent,
-    ) -> (*mut c_void, *mut (Sender<WorkspaceEvent>, WorkspaceEvent)) {
+    ) -> (
+        *mut c_void,
+        *mut (ChannelSender<WorkspaceEvent>, WorkspaceEvent),
+    ) {
         type AddObserverFunc = unsafe extern "C" fn(
             *mut c_void,
             *mut c_void,
@@ -84,8 +88,7 @@ impl WorkspaceObserver {
             let context = Box::into_raw(Box::new((sender, event)));
             let block = create_block(context);
 
-            let add_observer: AddObserverFunc =
-                std::mem::transmute(crate::bits::objc_msgSend as *const ());
+            let add_observer: AddObserverFunc = std::mem::transmute(objc_msgSend as *const ());
             let observer = add_observer(
                 notification_center,
                 sel("addObserverForName:object:queue:usingBlock:"),
@@ -136,10 +139,10 @@ struct Block {
 
 extern "C" fn block_callback(block: *mut Block, _notification: *mut c_void) {
     unsafe {
-        let context = (*block).context as *mut (Sender<WorkspaceEvent>, WorkspaceEvent);
+        let context = (*block).context as *mut (ChannelSender<WorkspaceEvent>, WorkspaceEvent);
         let (sender, event) = &*context;
         let event_copy = event.clone();
-        let _ = sender.send(event_copy);
+        sender.send(event_copy);
     }
 }
 
@@ -148,7 +151,9 @@ static BLOCK_DESCRIPTOR: BlockDescriptor = BlockDescriptor {
     size: size_of::<Block>(),
 };
 
-unsafe fn create_block(context: *mut (Sender<WorkspaceEvent>, WorkspaceEvent)) -> *mut Block {
+unsafe fn create_block(
+    context: *mut (ChannelSender<WorkspaceEvent>, WorkspaceEvent),
+) -> *mut Block {
     let block = unsafe {
         Box::new(Block {
             isa: _NSConcreteStackBlock,

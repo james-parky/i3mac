@@ -44,4 +44,5 @@ dependencies = [
  "core_foundation",
  "core_graphics",
  "foundation",
+ "libc",
 ]

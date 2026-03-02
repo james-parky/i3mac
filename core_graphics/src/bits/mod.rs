@@ -17,7 +17,7 @@ pub(super) use window::{
     WindowListOption,
 };
 
-pub(super) use event::{
+pub use event::{
     CGEventGetFlags, CGEventGetIntegerValueField, CGEventRef, CGEventTapCreate, CGEventTapEnable,
     CGEventTapProxy, EventFlags, EventTapLocation, EventTapOptions, EventTapPlacement, EventType,
     KEYBOARD_EVENT_KEYCODE,
