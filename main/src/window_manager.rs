@@ -1,3 +1,4 @@
+use crate::ctl::{CTL_SOCK, WmToCtlMessage};
 use crate::display::{Displays, LogicalDisplayId};
 use crate::event_loop::EventLoop;
 use crate::poll::{
@@ -25,10 +26,14 @@ use core_foundation::{CFRunLoopGetCurrent, CFRunLoopRunInMode, kCFRunLoopDefault
 use core_graphics::{Direction, DisplayId, KeyCommand, WindowId};
 use foundation::Colour;
 use log::Message::WindowRemoved;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::io::Read;
+use std::os::unix::net::UnixListener;
+use std::path::Path;
 use std::time::Duration;
 
-#[derive(Default, Copy, Clone, Debug)]
+#[derive(Default, Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
     pub window_padding: Option<f64>,
     log_level: Level,
@@ -68,7 +73,7 @@ impl Config {
     }
 }
 
-pub(super) struct WindowManager {
+pub struct WindowManager {
     windows: HashMap<WindowId, Window>,
     displays: Displays,
     floating_windows: HashSet<core_graphics::Window>,
@@ -88,7 +93,7 @@ impl WindowManager {
     //       create a new logical display on the physical display, then add the window the
     //       WindowManagers set of managed windows
     //  - Move all managed windows to where they should be
-    pub(super) fn new(config: Config) -> Result<Self> {
+    pub fn new(config: Config) -> Result<Self> {
         let logger =
             Logger::try_new("/dev/stdout", config.log_level).expect("failed to create logger");
 
@@ -155,7 +160,7 @@ impl WindowManager {
         Ok(())
     }
 
-    pub(super) fn run(&mut self) -> Result<()> {
+    pub fn run(&mut self) -> Result<()> {
         let (keyboard_source, keyboard_sender) = ChannelSource::<KeyCommand>::new();
         let (workspace_source, workspace_sender) = ChannelSource::<WorkspaceEvent>::new();
 
@@ -168,10 +173,15 @@ impl WindowManager {
             interval: Duration::from_secs(15),
         };
 
+        // TODO: function
+        let _ = std::fs::remove_file(CTL_SOCK);
+        let ctl_sock = UnixListener::bind(CTL_SOCK).unwrap();
+
         let mux = Mux::new().unwrap();
         mux.add(&keyboard_source);
         mux.add(&workspace_source);
         mux.add(&timer);
+        mux.add(&ctl_sock);
 
         unsafe {
             keyboard_handler
@@ -194,6 +204,16 @@ impl WindowManager {
                         for event in event_loop.poll_windows() {
                             self.handle_event(event);
                         }
+                    }
+                    Event::Readable(ident) if ident == ctl_sock.ident() => {
+                        println!("ctl sock rx");
+                        let mut buf = Vec::with_capacity(20);
+                        let (mut stream, _) = ctl_sock.accept().unwrap();
+                        let _ = stream.read_to_end(&mut buf).unwrap();
+                        println!("message on ctl sock: {buf:?}");
+                        serde_json::to_writer(&mut stream, &WmToCtlMessage::Config(self.config))
+                            .unwrap();
+                        stream.shutdown(std::net::Shutdown::Write);
                     }
                     Event::Timer(ident) if ident == timer.ident() => {
                         println!("timer tick");

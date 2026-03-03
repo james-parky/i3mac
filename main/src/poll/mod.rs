@@ -9,11 +9,14 @@ use libc::{intptr_t, kevent};
 pub use mux::Mux;
 pub use observer::*;
 pub use pipe::Pipe;
+use std::os::fd::AsRawFd;
+use std::os::unix::net::UnixListener;
 use std::{
     os::fd::RawFd,
     sync::mpsc::{Receiver, Sender, channel},
     time::Duration,
 };
+
 pub type Result<T> = std::result::Result<T, Error>;
 pub use keyboard::*;
 
@@ -43,6 +46,23 @@ impl AsKEvent for Timer {
 
     fn ident(&self) -> Ident {
         self.id
+    }
+}
+
+impl AsKEvent for UnixListener {
+    fn as_kevent(&self) -> kevent {
+        libc::kevent {
+            ident: self.as_raw_fd() as usize,
+            filter: libc::EVFILT_READ,
+            flags: libc::EV_ADD | libc::EV_ENABLE,
+            fflags: 0,
+            data: 0,
+            udata: std::ptr::null_mut(),
+        }
+    }
+
+    fn ident(&self) -> Ident {
+        self.as_raw_fd() as usize
     }
 }
 
