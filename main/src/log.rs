@@ -1,6 +1,7 @@
 use crate::display::PhysicalDisplayId;
 use crate::{container::Axis, display::LogicalDisplayId};
 use core_graphics::{Direction, DisplayId, KeyCommand, WindowId};
+use serde::{Deserialize, Serialize};
 use std::{
     fmt::Display,
     fs::{File, OpenOptions},
@@ -9,7 +10,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-#[derive(Default, Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Default, Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Level {
     #[default]
     Trace,

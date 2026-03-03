@@ -1,15 +1,4 @@
-mod container;
-mod display;
-mod error;
-mod event_loop;
-mod log;
-mod poll;
-mod status_bar;
-mod sys_info;
-mod window;
-mod window_manager;
-
-use crate::{window_manager::Config, window_manager::WindowManager};
+use main::window_manager::{Config, WindowManager};
 
 fn main() {
     if !have_accessibility_permissions() {
