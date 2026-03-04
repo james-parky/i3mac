@@ -24,10 +24,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "field_index_derive"
+version = "0.1.0"
+dependencies = [
+ "index_field",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "foundation"
 version = "0.1.1"
 dependencies = [
  "core_graphics",
+]
+
+[[package]]
+name = "index_field"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
 ]
 
 [[package]]
@@ -49,7 +66,9 @@ dependencies = [
  "ax_ui",
  "core_foundation",
  "core_graphics",
+ "field_index_derive",
  "foundation",
+ "index_field",
  "libc",
  "serde",
  "serde_json",

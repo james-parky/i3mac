@@ -14,7 +14,7 @@ pub use physical::PhysicalDisplayId;
 use physical::*;
 use std::collections::{HashMap, HashSet};
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct Displays {
     physical_displays: HashMap<PhysicalDisplayId, PhysicalDisplay>,
     active_logical_display_ids: HashMap<LogicalDisplayId, PhysicalDisplayId>,
@@ -22,6 +22,12 @@ pub struct Displays {
 }
 
 impl Displays {
+    pub fn apply_config(&mut self, config: physical::Config) {
+        for pd in self.physical_displays.values_mut() {
+            pd.apply_config(config)
+        }
+    }
+
     pub fn display_of_window(&self, wid: WindowId) -> Option<PhysicalDisplayId> {
         self.physical_displays
             .iter()

@@ -1,30 +1,25 @@
 use main::ctl::{CTL_SOCK, CtlToWmMessage, WmToCtlMessage};
-use main::window_manager::Config;
-use std::io::{Read, Write};
-use std::os::unix::net::{UnixListener, UnixStream};
-use std::path::{Path, PathBuf};
+use std::io::Write;
+use std::os::unix::net::UnixStream;
 
 enum Mode {
-    GetConfig,
-}
-
-enum OutputFormat {
-    Json,
-    Plain,
+    GetConfig(String),
+    SetConfig(String, serde_json::Value),
 }
 
 impl Mode {
     pub fn run(&self) -> Result<(), String> {
         let (msg, exp_resp) = match self {
-            Mode::GetConfig => (CtlToWmMessage::GetConfig, true),
+            Mode::GetConfig(index) => (CtlToWmMessage::GetConfigField(index.clone()), true),
+            Mode::SetConfig(index, value) => (
+                CtlToWmMessage::SetConfig(index.clone(), value.clone()),
+                false,
+            ),
         };
 
         let mut tx = Vec::with_capacity(20);
-        // derive serialize from serde for messages
-        // msg.write_vec(tx)
 
         serde_json::to_writer(&mut tx, &msg).map_err(|e| e.to_string())?;
-        println!("{}", serde_json::to_string_pretty(&tx).unwrap());
 
         let mut stream = UnixStream::connect(CTL_SOCK).unwrap();
         stream.write_all(&tx).map_err(|e| e.to_string())?;
@@ -39,8 +34,13 @@ impl Mode {
         let msg: WmToCtlMessage =
             serde_json::from_reader(&mut stream).map_err(|e| e.to_string())?;
 
-        println!("{}", serde_json::to_string_pretty(&msg).unwrap());
-        Ok(())
+        match msg {
+            WmToCtlMessage::Value(Ok(val)) => {
+                println!("{}", serde_json::to_string_pretty(&val).unwrap());
+                Ok(())
+            }
+            WmToCtlMessage::Value(Err(e)) => Err(e),
+        }
     }
 }
 
@@ -52,10 +52,25 @@ fn main() {
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
-            "get" => match args.next().unwrap().as_str() {
-                "config" => mode = Some(Mode::GetConfig),
-                _ => continue,
-            },
+            "get" => {
+                let index = args.next().unwrap();
+                if index.starts_with("config.") {
+                    mode = Some(Mode::GetConfig(
+                        index.strip_prefix("config.").unwrap().to_string(),
+                    ));
+                }
+            }
+
+            "set" => {
+                let index = args.next().unwrap();
+                let value = args.next().unwrap();
+                if index.starts_with("config.") {
+                    mode = Some(Mode::SetConfig(
+                        index.strip_prefix("config.").unwrap().to_string(),
+                        serde_json::to_value(value).unwrap(),
+                    ));
+                }
+            }
             _ => continue,
         }
     }

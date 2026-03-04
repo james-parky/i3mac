@@ -42,6 +42,7 @@ impl From<crate::window_manager::Config> for Config {
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct PhysicalDisplay {
     bounds: Bounds,
     logical_displays: HashMap<LogicalDisplayId, LogicalDisplay>,
@@ -50,6 +51,13 @@ pub(crate) struct PhysicalDisplay {
 }
 
 impl PhysicalDisplay {
+    pub fn apply_config(&mut self, config: Config) {
+        self.config = config;
+        for ld in self.logical_displays.values_mut() {
+            ld.apply_config(config.into())
+        }
+    }
+
     pub fn new(logical_id: LogicalDisplayId, bounds: Bounds, config: Config) -> Self {
         let logical_display = LogicalDisplay::new(bounds, config.into());
         // for window in cg_display.windows {

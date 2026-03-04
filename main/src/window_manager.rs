@@ -1,4 +1,4 @@
-use crate::ctl::{CTL_SOCK, WmToCtlMessage};
+use crate::ctl::{CTL_SOCK, CtlToWmMessage, WmToCtlMessage};
 use crate::display::{Displays, LogicalDisplayId};
 use crate::event_loop::EventLoop;
 use crate::poll::{
@@ -25,15 +25,19 @@ use crate::{
 use core_foundation::{CFRunLoopGetCurrent, CFRunLoopRunInMode, kCFRunLoopDefaultMode};
 use core_graphics::{Direction, DisplayId, KeyCommand, WindowId};
 use foundation::Colour;
+use index_field::IndexField;
 use log::Message::WindowRemoved;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::os::unix::net::UnixListener;
 use std::path::Path;
+use std::str::FromStr;
 use std::time::Duration;
 
-#[derive(Default, Copy, Clone, Debug, Serialize, Deserialize)]
+use field_index_derive::IndexField;
+
+#[derive(Default, Copy, Clone, Debug, Serialize, Deserialize, IndexField)]
 pub struct Config {
     pub window_padding: Option<f64>,
     log_level: Level,
@@ -55,12 +59,12 @@ impl Config {
                     ret.window_padding = Some(padding as f64);
                 }
                 "--log-level" => {
-                    let level: Level = args
-                        .next()
-                        .expect("expected one of {info, warn, error, trace}  after --log-level")
-                        .as_str()
-                        .try_into()
-                        .expect("expected one of {info, warn, error, trace}  after --log-level");
+                    let level: Level = Level::from_str(
+                        args.next()
+                            .expect("expected one of {info, warn, error, trace}  after --log-level")
+                            .as_str(),
+                    )
+                    .unwrap();
                     ret.log_level = level;
                 }
                 unknown => {
@@ -73,6 +77,7 @@ impl Config {
     }
 }
 
+#[derive(Debug)]
 pub struct WindowManager {
     windows: HashMap<WindowId, Window>,
     displays: Displays,
@@ -160,6 +165,10 @@ impl WindowManager {
         Ok(())
     }
 
+    fn apply_config(&mut self, config: Config) {
+        self.displays.apply_config(config.into());
+    }
+
     pub fn run(&mut self) -> Result<()> {
         let (keyboard_source, keyboard_sender) = ChannelSource::<KeyCommand>::new();
         let (workspace_source, workspace_sender) = ChannelSource::<WorkspaceEvent>::new();
@@ -207,13 +216,26 @@ impl WindowManager {
                     }
                     Event::Readable(ident) if ident == ctl_sock.ident() => {
                         println!("ctl sock rx");
-                        let mut buf = Vec::with_capacity(20);
                         let (mut stream, _) = ctl_sock.accept().unwrap();
-                        let _ = stream.read_to_end(&mut buf).unwrap();
-                        println!("message on ctl sock: {buf:?}");
-                        serde_json::to_writer(&mut stream, &WmToCtlMessage::Config(self.config))
+                        let msg: CtlToWmMessage = serde_json::from_reader(&mut stream)
+                            .map_err(|e| e.to_string())
                             .unwrap();
-                        stream.shutdown(std::net::Shutdown::Write);
+
+                        match msg {
+                            CtlToWmMessage::GetConfigField(index) => {
+                                let value = index_field::get_field(&self.config, &index);
+                                serde_json::to_writer(&mut stream, &WmToCtlMessage::Value(value))
+                                    .unwrap();
+                                stream.shutdown(std::net::Shutdown::Write);
+                            }
+
+                            CtlToWmMessage::SetConfig(index, value) => {
+                                let _ =
+                                    index_field::set_field(&mut self.config, index.as_str(), value);
+                                self.apply_config(self.config);
+                                println!("{:#?}", self);
+                            }
+                        }
                     }
                     Event::Timer(ident) if ident == timer.ident() => {
                         println!("timer tick");

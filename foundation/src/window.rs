@@ -19,6 +19,7 @@ impl Default for Application {
     }
 }
 
+#[derive(Debug)]
 pub struct Window {
     window: *mut c_void,
 }

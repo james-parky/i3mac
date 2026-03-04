@@ -2,6 +2,7 @@ use crate::display::PhysicalDisplayId;
 use crate::{container::Axis, display::LogicalDisplayId};
 use core_graphics::{Direction, DisplayId, KeyCommand, WindowId};
 use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 use std::{
     fmt::Display,
     fs::{File, OpenOptions},
@@ -19,15 +20,15 @@ pub enum Level {
     Error,
 }
 
-impl TryFrom<&str> for Level {
-    type Error = ();
-    fn try_from(value: &str) -> Result<Self, ()> {
+impl FromStr for Level {
+    type Err = String;
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
             "info" => Ok(Level::Info),
             "warn" => Ok(Level::Warn),
             "error" => Ok(Level::Error),
             "trace" => Ok(Level::Trace),
-            _ => Err(()),
+            _ => Err("unknown log level".to_string()),
         }
     }
 }
@@ -52,6 +53,7 @@ pub trait Log {
     }
 }
 
+#[derive(Debug)]
 pub struct Logger {
     file: File,
     level: Level,

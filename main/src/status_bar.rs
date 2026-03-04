@@ -16,6 +16,7 @@ use foundation::{Application, Colour, IdLabel, Label, Window};
 //  - Current mem usage / total
 //
 //  - kqueue events to see if wifi etc has been changed and timer fd for cpu/mem
+#[derive(Debug)]
 pub struct StatusBar {
     logical_ids: Vec<LogicalDisplayId>,
     window: Window,

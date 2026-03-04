@@ -56,6 +56,10 @@ pub(crate) struct LogicalDisplay {
 }
 
 impl LogicalDisplay {
+    pub fn apply_config(&mut self, config: Config) {
+        self.config = config;
+    }
+
     pub(crate) fn new(cg_bounds: Bounds, config: Config) -> Self {
         // Core Graphics bounds -- the bounds used for a `PhysicalDisplay` do
         // not include the Apple menu bar; we need to subtract the height of
