@@ -729,12 +729,24 @@ impl WindowManager {
 // TODO: Make the terminal application used configurable
 fn open_terminal() {
     use std::process::Command;
+    let _ = Command::new("open")
+        .arg("-F")
+        .arg("-n")
+        .arg("-a")
+        .arg("Terminal")
+        .spawn();
+
     let apple_script = r#"
-        tell application "Terminal"
-            do script ""
-            set w to front window
-            set miniaturized of w to false
-            activate
+        tell application "System Events"
+            tell process "Terminal"
+                set windowList to every window
+                if (count of windowList) > 0 then
+                    set frontWindow to item 1 of windowList
+                    if value of attribute "AXMinimized" of frontWindow is true then
+                        set value of attribute "AXMinimized" of frontWindow to false
+                    end if
+                end if
+            end tell
         end tell
     "#;
 
