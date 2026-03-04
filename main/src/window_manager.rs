@@ -1,6 +1,7 @@
 use crate::ctl::{CTL_SOCK, WmToCtlMessage};
 use crate::display::{Displays, LogicalDisplayId};
 use crate::event_loop::EventLoop;
+use crate::log::Message::{ToggleWindowFloatingKeyCommand, WindowMadeFloating, WindowMadeManaged};
 use crate::poll::{
     AsKEvent, ChannelSource, Event, KeyboardHandler, Mux, Timer, WorkspaceEvent, WorkspaceObserver,
 };
@@ -76,7 +77,7 @@ impl Config {
 pub struct WindowManager {
     windows: HashMap<WindowId, Window>,
     displays: Displays,
-    floating_windows: HashSet<core_graphics::Window>,
+    floating_windows: HashSet<WindowId>,
     minimised_windows: HashSet<WindowId>,
     logger: Logger,
     config: Config,
