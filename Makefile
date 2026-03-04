@@ -1,3 +1,5 @@
+PADDING=60
+
 all: clippy test i3mac
 
 i3mac:
@@ -16,6 +18,6 @@ distclean:
 	$(RM) -r .cargo
 
 run:
-	./target/release/i3mac --padding 50
+	./target/release/i3mac --padding $(PADDING)
 
 .PHONY: clippy clean distclean run
