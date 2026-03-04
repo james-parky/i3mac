@@ -343,11 +343,7 @@ impl WindowManager {
     }
 
     fn handle_window_removed(&mut self, display_id: DisplayId, window_id: WindowId) -> Result<()> {
-        if self
-            .floating_windows
-            .iter()
-            .any(|w| w.number() == window_id)
-        {
+        if self.floating_windows.iter().any(|w| *w == window_id) {
             return Ok(());
         }
 
@@ -424,12 +420,12 @@ impl WindowManager {
                 }
             }
 
-            // KeyCommand::ToggleFloating => {
-            //     ToggleWindowFloatingKeyCommand.log(&mut self.logger);
-            //     if let Err(e) = self.handle_toggle_floating() {
-            //         eprintln!("failed to toggle floating: {e:?}");
-            //     }
-            // }
+            KeyCommand::ToggleFloating => {
+                ToggleWindowFloatingKeyCommand.log(&mut self.logger);
+                if let Err(e) = self.handle_toggle_floating() {
+                    eprintln!("failed to toggle floating: {e:?}");
+                }
+            }
             _ => {}
         }
     }
@@ -439,36 +435,27 @@ impl WindowManager {
     //  2. If the currently focused window is already floating, add it to the
     //     active physical display, and mark it as not floating, else remove it
     //     from the active physical display, and mark it as floating.
-    // fn handle_toggle_floating(&mut self) -> Result<()> {
-    //     let focused_window = ax_ui::Window::try_get_focused().map_err(Error::AxUi)?;
-    //
-    //     let cg_window = self
-    //         .floating_windows
-    //         .iter()
-    //         .find(|w| w.number() == focused_window)
-    //         .cloned();
-    //
-    //     if let Some(cg_window) = cg_window {
-    //         self.floating_windows.remove(&cg_window);
-    //         self.active_physical_display_mut().add_window(cg_window)?;
-    //         WindowMadeManaged(focused_window).log(&mut self.logger);
-    //     } else {
-    //         let removed = self
-    //             .active_physical_display_mut()
-    //             .remove_window(focused_window)?
-    //             .ok_or(Error::CouldNotRemoveWindow)?;
-    //
-    //         // Sanity check
-    //         if removed.cg().number() != focused_window {
-    //             panic!("just removed a window that we shouldn't have");
-    //         }
-    //
-    //         self.floating_windows.insert(removed.cg().clone());
-    //         WindowMadeFloating(focused_window).log(&mut self.logger);
-    //     }
-    //
-    //     Ok(())
-    // }
+    fn handle_toggle_floating(&mut self) -> Result<()> {
+        let focused_window = ax_ui::Window::try_get_focused().map_err(Error::AxUi)?;
+
+        if self.floating_windows.contains(&focused_window) {
+            self.floating_windows.remove(&focused_window);
+            let cw = container::Window {
+                id: focused_window,
+                min_width: 0.0,
+                min_height: 0.0,
+            };
+            self.displays.add_window(cw)?;
+            WindowMadeManaged(focused_window).log(&mut self.logger);
+        } else {
+            let pid = self.displays.display_of_window(focused_window).unwrap();
+            self.displays.remove_window(pid, focused_window)?;
+            self.floating_windows.insert(focused_window);
+            WindowMadeFloating(focused_window).log(&mut self.logger);
+        }
+
+        self.apply_layout()
+    }
 
     fn handle_resize(&mut self, direction: Direction) -> Result<()> {
         let focused_window = ax_ui::Window::try_get_focused().map_err(Error::AxUi)?;
