@@ -146,10 +146,6 @@ impl Display {
         self.root.window_ids()
     }
 
-    pub fn find_window(&self, window_id: WindowId) -> Option<WindowId> {
-        self.root.find_window(window_id)
-    }
-
     // When splitting a logical display in some direction:
     //  1. If there is some focused window, convert its parent leaf into a split
     //     of the given direction, and shift the leaf into it.
@@ -225,12 +221,7 @@ impl Display {
         window_id: WindowId,
         direction: Direction,
     ) -> Result<()> {
-        const RESIZE_AMOUNT: f64 = 50.0;
-        self.root.resize_window(
-            window_id,
-            direction,
-            RESIZE_AMOUNT,
-            self.config.window_padding(),
-        )
+        self.root
+            .resize_window(window_id, direction, self.config.window_padding())
     }
 }

@@ -59,9 +59,9 @@ mod tests {
         let leaf = dummy_leaf(WindowId::from(1u32));
         let split = dummy_split(Axis::default(), &[WindowId::from(1u32)]);
 
-        assert_eq!(empty.get_bounds(), dummy_bounds());
-        assert_eq!(leaf.get_bounds(), dummy_bounds());
-        assert_eq!(split.get_bounds(), dummy_bounds());
+        assert_eq!(empty.bounds(), dummy_bounds());
+        assert_eq!(leaf.bounds(), dummy_bounds());
+        assert_eq!(split.bounds(), dummy_bounds());
     }
 
     #[test]
@@ -182,8 +182,8 @@ mod tests {
                     .collect();
                 assert!(ids.contains(&first_id));
                 assert!(ids.contains(&second_id));
-                assert_eq!(children[0].get_bounds(), exp_first_leaf_bounds);
-                assert_eq!(children[1].get_bounds(), exp_second_leaf_bounds);
+                assert_eq!(children[0].bounds(), exp_first_leaf_bounds);
+                assert_eq!(children[1].bounds(), exp_second_leaf_bounds);
             }
             _ => panic!("Expected container to be a split"),
         }
@@ -401,7 +401,7 @@ mod tests {
         assert!(res.is_some_and(|id| id == target));
         assert!(matches!(split, Container::Split { children, .. }
             if children == vec![Container::Leaf {
-                bounds: split.get_bounds(),
+                bounds: split.bounds(),
                 padding: 0.0,
                 window: dummy_window(WindowId::from(2u32)),
             }]
@@ -422,8 +422,7 @@ mod tests {
 
         let res = split.remove_window(target, 0.0).unwrap();
 
-        let exp_child_bounds =
-            spread_bounds_along_axis(split.get_bounds(), Axis::default(), 2, 0.0);
+        let exp_child_bounds = spread_bounds_along_axis(split.bounds(), Axis::default(), 2, 0.0);
 
         assert!(res.is_some_and(|id| id == target));
         assert!(matches!(split, Container::Split { children, .. }
