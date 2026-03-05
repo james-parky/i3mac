@@ -1,8 +1,6 @@
 use main::ctl::{CTL_SOCK, CtlToWmMessage, WmToCtlMessage};
-use main::window_manager::Config;
-use std::io::{Read, Write};
-use std::os::unix::net::{UnixListener, UnixStream};
-use std::path::{Path, PathBuf};
+use std::io::Write;
+use std::os::unix::net::UnixStream;
 
 enum Mode {
     GetConfig,

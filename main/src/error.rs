@@ -1,7 +1,8 @@
-use crate::display::LogicalDisplayId;
+use crate::display;
 use core_graphics::DisplayId;
+use std::io;
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug)]
 pub enum Error {
     AxUi(ax_ui::Error),
     CoreGraphics(core_graphics::Error),
@@ -16,7 +17,8 @@ pub enum Error {
     ExpectedSplitContainer,
     CouldNotRemoveWindow,
     CannotFitWindow,
-    PhysicalDoesNotContainLogical(DisplayId, LogicalDisplayId),
+    PhysicalDoesNotContainLogical(DisplayId, display::physical::Id),
+    CreateLogger(io::Error),
 }
 
 pub(crate) type Result<T> = std::result::Result<T, Error>;

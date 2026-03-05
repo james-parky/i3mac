@@ -1,6 +1,6 @@
+use crate::display::logical;
 use crate::{
     container,
-    display::{LogicalDisplay, LogicalDisplayId},
     error::{Error, Result},
 };
 use container::{Axis, Window};
@@ -8,22 +8,22 @@ use core_graphics::{Bounds, Direction, DisplayId, WindowId};
 use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone, Hash, Ord, PartialOrd)]
-pub struct PhysicalDisplayId(pub usize);
+pub struct Id(pub usize);
 
-impl std::fmt::Display for PhysicalDisplayId {
+impl std::fmt::Display for Id {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "PD{}", self.0)
     }
 }
 
-impl From<DisplayId> for PhysicalDisplayId {
+impl From<DisplayId> for Id {
     fn from(id: DisplayId) -> Self {
         Self(usize::from(id))
     }
 }
 
-impl From<PhysicalDisplayId> for DisplayId {
-    fn from(id: PhysicalDisplayId) -> Self {
+impl From<Id> for DisplayId {
+    fn from(id: Id) -> Self {
         DisplayId::from(id.0)
     }
 }
@@ -34,24 +34,24 @@ pub struct Config {
     pub window_padding: Option<f64>,
 }
 
-impl From<crate::window_manager::Config> for Config {
-    fn from(value: crate::window_manager::Config) -> Self {
+impl From<crate::config::Config> for Config {
+    fn from(value: crate::config::Config) -> Self {
         Self {
             window_padding: value.window_padding,
         }
     }
 }
 
-pub(crate) struct PhysicalDisplay {
+pub(crate) struct Display {
     bounds: Bounds,
-    logical_displays: HashMap<LogicalDisplayId, LogicalDisplay>,
-    active_logical_id: LogicalDisplayId,
+    logical_displays: HashMap<logical::Id, logical::Display>,
+    active_logical_id: logical::Id,
     config: Config,
 }
 
-impl PhysicalDisplay {
-    pub fn new(logical_id: LogicalDisplayId, bounds: Bounds, config: Config) -> Self {
-        let logical_display = LogicalDisplay::new(bounds, config.into());
+impl Display {
+    pub fn new(logical_id: logical::Id, bounds: Bounds, config: Config) -> Self {
+        let logical_display = logical::Display::new(bounds, config.into());
         // for window in cg_display.windows {
         //     // TODO: handle
         //     let cw = container::Window{
@@ -73,7 +73,7 @@ impl PhysicalDisplay {
         }
     }
 
-    pub fn logical(&self, lid: LogicalDisplayId) -> Option<&LogicalDisplay> {
+    pub fn logical(&self, lid: logical::Id) -> Option<&logical::Display> {
         self.logical_displays.get(&lid)
     }
 
@@ -120,7 +120,7 @@ impl PhysicalDisplay {
             .add_window(window)
     }
 
-    pub fn active_logical_id(&self) -> LogicalDisplayId {
+    pub fn active_logical_id(&self) -> logical::Id {
         self.active_logical_id
     }
 
@@ -142,20 +142,18 @@ impl PhysicalDisplay {
             .split(direction)
     }
 
-    pub fn has_logical_display(&self, logical_id: LogicalDisplayId) -> bool {
-        self.logical_displays.contains_key(&logical_id)
+    pub fn has_logical_display(&self, id: logical::Id) -> bool {
+        self.logical_displays.contains_key(&id)
     }
 
-    pub(super) fn create_logical_display(&mut self, logical_id: LogicalDisplayId) {
-        self.logical_displays.insert(
-            logical_id,
-            LogicalDisplay::new(self.bounds, self.config.into()),
-        );
+    pub(super) fn create_logical_display(&mut self, id: logical::Id) {
+        self.logical_displays
+            .insert(id, logical::Display::new(self.bounds, self.config.into()));
     }
 
-    pub fn remove_logical_display(&mut self, logical_id: LogicalDisplayId) {
+    pub fn remove_logical_display(&mut self, id: logical::Id) {
         // TODO: error trying to remove last one
-        self.logical_displays.remove(&logical_id);
+        self.logical_displays.remove(&id);
 
         // Crude way of getting new active LD
         if let Some(k) = self.logical_displays.keys().next() {
@@ -163,13 +161,9 @@ impl PhysicalDisplay {
         }
     }
 
-    pub fn add_window_to_logical(
-        &mut self,
-        window: Window,
-        logical_display_id: LogicalDisplayId,
-    ) -> Result<()> {
+    pub fn add_window_to_logical(&mut self, window: Window, id: logical::Id) -> Result<()> {
         self.logical_displays
-            .get_mut(&logical_display_id)
+            .get_mut(&id)
             .unwrap()
             .add_window(window)
     }
@@ -181,11 +175,11 @@ impl PhysicalDisplay {
             .resize_focused_window(direction)
     }
 
-    pub fn active_logical_display(&self) -> Option<&LogicalDisplay> {
+    pub fn active_logical_display(&self) -> Option<&logical::Display> {
         self.logical_displays.get(&self.active_logical_id)
     }
 
-    pub(crate) fn active_display(&self) -> &LogicalDisplay {
+    pub(crate) fn active_display(&self) -> &logical::Display {
         // TODO: unwrap
         self.logical_displays.get(&self.active_logical_id).unwrap()
     }
@@ -198,10 +192,10 @@ impl PhysicalDisplay {
     //    3. Focus the target logical display
     //    4. If the previous logical display now has no windows, delete it
     //    5. Update the physical display's status bar
-    pub fn switch_to(&mut self, logical_id: LogicalDisplayId) {
-        if logical_id != self.active_logical_id {
+    pub fn switch_to(&mut self, id: logical::Id) {
+        if id != self.active_logical_id {
             self.logical_displays.get(&self.active_logical_id).unwrap();
-            self.active_logical_id = logical_id;
+            self.active_logical_id = id;
         }
     }
 

@@ -1,4 +1,5 @@
-use main::window_manager::{Config, WindowManager};
+use main::config::Config;
+use main::window_manager::WindowManager;
 
 fn main() {
     if !have_accessibility_permissions() {

@@ -1,4 +1,6 @@
-use crate::{display::LogicalDisplayId, sys_info::SysInfo};
+use crate::display;
+use crate::display::logical;
+use crate::sys_info::SysInfo;
 use core_graphics::Bounds;
 use foundation::{Application, Colour, IdLabel, Label, Window};
 
@@ -17,7 +19,7 @@ use foundation::{Application, Colour, IdLabel, Label, Window};
 //
 //  - kqueue events to see if wifi etc has been changed and timer fd for cpu/mem
 pub struct StatusBar {
-    logical_ids: Vec<LogicalDisplayId>,
+    logical_ids: Vec<logical::Id>,
     window: Window,
     width: f64,
 }
@@ -29,7 +31,7 @@ impl StatusBar {
     const ACTIVE_OPACITY: f64 = 1.0;
     const INACTIVE_OPACITY: f64 = 0.6;
 
-    pub fn new(logical_ids: Vec<LogicalDisplayId>, bounds: Bounds, background: Colour) -> Self {
+    pub fn new(logical_ids: Vec<logical::Id>, bounds: Bounds, background: Colour) -> Self {
         let mut logical_ids = logical_ids;
         logical_ids.sort();
 
@@ -102,11 +104,11 @@ impl StatusBar {
         self.window.set_opacity(opacity);
     }
 
-    pub fn remove_logical_id(&mut self, logical_id: LogicalDisplayId) {
+    pub fn remove_logical_id(&mut self, logical_id: logical::Id) {
         self.logical_ids.retain(|&id| id != logical_id);
     }
 
-    pub fn add_logical_id(&mut self, logical_id: LogicalDisplayId) {
+    pub fn add_logical_id(&mut self, logical_id: logical::Id) {
         if !self.logical_ids.contains(&logical_id) {
             self.logical_ids.push(logical_id);
             self.logical_ids.sort();
@@ -117,7 +119,7 @@ impl StatusBar {
         self.window.close();
     }
 
-    pub fn draw(&mut self, active_id: LogicalDisplayId) {
+    pub fn draw(&mut self, active_id: logical::Id) {
         self.set_active(self.logical_ids.contains(&active_id));
         self.window.clear_content_view();
 

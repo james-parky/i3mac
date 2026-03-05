@@ -1,6 +1,7 @@
+use crate::container::Axis;
 use crate::{
     container,
-    container::{Axis, Container},
+    container::Container,
     error::{Error, Result},
     status_bar::StatusBar,
 };
@@ -9,21 +10,21 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 
 #[derive(PartialEq, Eq, Copy, Clone, Hash, Ord, PartialOrd)]
-pub struct LogicalDisplayId(pub usize);
+pub struct Id(pub usize);
 
-impl std::fmt::Display for LogicalDisplayId {
+impl std::fmt::Display for Id {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }
 }
 
-impl Debug for LogicalDisplayId {
+impl Debug for Id {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "LD{}", self.0)
     }
 }
 
-impl From<usize> for LogicalDisplayId {
+impl From<usize> for Id {
     fn from(id: usize) -> Self {
         Self(id)
     }
@@ -49,13 +50,13 @@ impl Config {
 }
 
 #[derive(Debug)]
-pub(crate) struct LogicalDisplay {
+pub(crate) struct Display {
     root: Container,
     focused_window: Option<WindowId>,
     config: Config,
 }
 
-impl LogicalDisplay {
+impl Display {
     pub(crate) fn new(cg_bounds: Bounds, config: Config) -> Self {
         // Core Graphics bounds -- the bounds used for a `PhysicalDisplay` do
         // not include the Apple menu bar; we need to subtract the height of
@@ -70,7 +71,7 @@ impl LogicalDisplay {
             ..cg_bounds
         };
 
-        LogicalDisplay {
+        Display {
             root: Container::Empty { bounds },
             focused_window: None,
             config,

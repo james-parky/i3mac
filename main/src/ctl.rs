@@ -1,4 +1,4 @@
-use crate::window_manager::Config;
+use crate::config::Config;
 use serde::{Deserialize, Serialize};
 
 pub const CTL_SOCK: &str = "/tmp/i3mac/ctl.sock";

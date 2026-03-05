@@ -87,8 +87,6 @@ impl EventLoop {
             for (display_id, cg_display) in cg_displays {
                 let new_window_ids = cg_display.window_ids();
 
-                println!("New window IDs: {:?} on {display_id}", new_window_ids);
-
                 match self.previous_displays.get(&display_id) {
                     None => {
                         events.push(Event::DisplayAdded {
@@ -99,20 +97,16 @@ impl EventLoop {
                         self.previous_displays.insert(display_id, new_window_ids);
                     }
                     Some(old_window_ids) => {
-                        println!("Old window IDs: {:?} on {display_id}", old_window_ids);
-
                         for &window_id in new_window_ids.difference(old_window_ids) {
                             // Skip windows that were just moved by the WM —
                             // their appearance here is expected, not a new window.
                             if just_moved.contains(&window_id) {
                                 continue;
                             }
-                            println!("window {window_id} in new window ids but not old");
                             if !self.managed_windows.contains(&window_id)
                                 && let Some(window) =
                                     cg_display.windows.iter().find(|w| w.number() == window_id)
                             {
-                                println!("creating window added event");
                                 events.push(Event::WindowAdded {
                                     display_id,
                                     window: window.clone(),

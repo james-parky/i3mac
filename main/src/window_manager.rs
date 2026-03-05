@@ -1,86 +1,62 @@
-use crate::ctl::{CTL_SOCK, WmToCtlMessage};
-use crate::display::{Displays, LogicalDisplayId};
-use crate::event_loop::EventLoop;
-use crate::log::Message::{ToggleWindowFloatingKeyCommand, WindowMadeFloating, WindowMadeManaged};
-use crate::poll::{
-    AsKEvent, ChannelSource, Event, KeyboardHandler, Mux, Timer, WorkspaceEvent, WorkspaceObserver,
-};
-use crate::status_bar::StatusBar;
 use crate::{
-    container, display,
+    config::Config,
+    container,
+    ctl::{CTL_SOCK, WmToCtlMessage},
+    display::{self, Displays, logical, physical},
     error::{Error, Result},
-    event_loop, log,
-    log::Message::{
-        FocusLogicalDisplayKeyCommand, MoveFocusedWindowToLogicalDisplayKeyCommand,
-        OpenTerminalKeyCommand, ResizeWindowInDirectionKeyCommand, ShiftFocusInDirectionKeyCommand,
-        ToggleHorizontalSplitKeyCommand, ToggleVerticalSplitKeyCommand,
-        WindowMovedToLogicalDisplay, WindowResized, WindowSplitAlongAxis,
+    event_loop::{self, EventLoop},
+    log::{
+        Log, Logger,
+        Message::{
+            FocusLogicalDisplayKeyCommand, MoveFocusedWindowToLogicalDisplayKeyCommand,
+            OpenTerminalKeyCommand, ReceivedKeyCommand, ReceivedWindowAddedEvent,
+            ReceivedWindowFocusedEvent, ReceivedWindowRemovedEvent,
+            ResizeWindowInDirectionKeyCommand, ShiftFocusInDirectionKeyCommand,
+            ToggleHorizontalSplitKeyCommand, ToggleVerticalSplitKeyCommand,
+            ToggleWindowFloatingKeyCommand, WindowAdded, WindowMadeFloating, WindowMadeManaged,
+            WindowMovedToLogicalDisplay, WindowRemoved, WindowResized, WindowSplitAlongAxis,
+        },
     },
-    log::Message::{
-        ReceivedKeyCommand, ReceivedWindowAddedEvent, ReceivedWindowFocusedEvent,
-        ReceivedWindowRemovedEvent,
+    poll::{
+        AsKEvent, ChannelSource, Event, KeyboardHandler, Mux, Timer, WorkspaceEvent,
+        WorkspaceObserver,
     },
-    log::{Level, Log, Logger},
+    status_bar::StatusBar,
     window::Window,
 };
 use core_foundation::{CFRunLoopGetCurrent, CFRunLoopRunInMode, kCFRunLoopDefaultMode};
 use core_graphics::{Direction, DisplayId, KeyCommand, WindowId};
 use foundation::Colour;
-use log::Message::WindowRemoved;
-use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
-use std::io::Read;
-use std::os::unix::net::UnixListener;
-use std::path::Path;
-use std::time::Duration;
-
-#[derive(Default, Copy, Clone, Debug, Serialize, Deserialize)]
-pub struct Config {
-    pub window_padding: Option<f64>,
-    log_level: Level,
-}
-
-impl Config {
-    pub fn must_parse() -> Self {
-        let mut ret = Self::default();
-        let mut args = std::env::args().skip(1);
-
-        while let Some(arg) = args.next() {
-            match arg.as_str() {
-                "--padding" => {
-                    let padding = args
-                        .next()
-                        .expect("expected a usize value after --padding")
-                        .parse::<usize>()
-                        .expect("expected a usize value after --padding");
-                    ret.window_padding = Some(padding as f64);
-                }
-                "--log-level" => {
-                    let level: Level = args
-                        .next()
-                        .expect("expected one of {info, warn, error, trace}  after --log-level")
-                        .as_str()
-                        .try_into()
-                        .expect("expected one of {info, warn, error, trace}  after --log-level");
-                    ret.log_level = level;
-                }
-                unknown => {
-                    panic!("{}", format!("unknown argument: {unknown}"));
-                }
-            }
-        }
-
-        ret
-    }
-}
+use std::{
+    collections::{HashMap, HashSet},
+    io::Read,
+    os::unix::net::UnixListener,
+    time::Duration,
+};
 
 pub struct WindowManager {
+    /// A map between window IDs reported by CoreGraphics, and our managed
+    /// window objects.
     windows: HashMap<WindowId, Window>,
+    /// The delegate display manager.
     displays: Displays,
+    /// A set of window IDs that have been toggled floating by the user. These
+    /// windows are kept track of, but not managed, and therefore not included
+    /// in container bounds calculations.
     floating_windows: HashSet<WindowId>,
+    /// A set of window IDs that have been minimised by the window manager but
+    /// are still under management. When a window is minimised, either through
+    /// user interaction, or the AXUI API, Core Graphics stops reporting its
+    /// window ID. This causes issues with the minimisation/un-minimisation
+    /// process performed during logical display focus shift; so keep track.
     minimised_windows: HashSet<WindowId>,
+    /// A logger to that produces logs prefixed with "WM".
     logger: Logger,
+    /// Config for the window manager.
     config: Config,
+    /// A set of status bars, one per physical display reported by
+    /// Core Graphics. These hold information about what logical displays exist
+    /// on each physical display, and which one has global focus.
     status_bars: HashMap<DisplayId, StatusBar>,
 }
 
@@ -95,15 +71,13 @@ impl WindowManager {
     //       WindowManagers set of managed windows
     //  - Move all managed windows to where they should be
     pub fn new(config: Config) -> Result<Self> {
-        let logger =
-            Logger::try_new("/dev/stdout", config.log_level).expect("failed to create logger");
-
         let mut wm = Self {
             windows: Default::default(),
             displays: Default::default(),
             floating_windows: Default::default(),
             minimised_windows: Default::default(),
-            logger,
+            logger: Logger::try_new("/dev/stdout", config.log_level)
+                .map_err(Error::CreateLogger)?,
             config,
             status_bars: Default::default(),
         };
@@ -113,26 +87,13 @@ impl WindowManager {
             wm.displays
                 .add_physical(id.into(), cg_display.bounds, config.into());
 
-            // For each window in the CoreGraphics display:
-            //  - Try to insert it into the current logical display. If it can't fit it, create a
-            //    new logical display, on the same physical display as previous.
             for window in cg_display.windows {
-                let window_id = window.number();
-                let w = Window::try_from(window)?;
-                let min_size = w.ax().min_size().unwrap_or_default();
-                let cw = container::Window {
-                    id: window_id,
-                    min_width: min_size.width,
-                    min_height: min_size.height,
-                };
-
-                wm.displays.add_window(cw)?;
-                wm.windows.insert(window_id, w);
+                wm.start_managing_window(window)?;
             }
 
-            let lids = wm.displays.logical_ids(id.into());
-            let status_bar =
-                StatusBar::new(lids.into_iter().collect(), cg_display.bounds, Colour::Clear);
+            let lids: Vec<_> = wm.displays.logical_ids(id.into()).into_iter().collect();
+            let status_bar = StatusBar::new(lids, cg_display.bounds, Colour::Clear);
+
             wm.status_bars.insert(id, status_bar);
         }
 
@@ -141,6 +102,35 @@ impl WindowManager {
         Ok(wm)
     }
 
+    /// Start managing a window reported by Core Graphics.
+    // To start managing a window:
+    //  1. Create a `main::window::Window` from the `WindowId` provided by the
+    //    supplied `core_graphics::Window`.
+    //  2. Try to get minimum bounds for said window, defaulting on error.
+    //  3. Create a `container::Window`: contains necessary information for
+    //     placing a window in a container, i.e. `WindowId` and minimum bounds.
+    //  4. Add it to some display, delegating to the `WindowManager`'s display
+    //    manager, `Displays`.
+    //  5. Add it to the `WindowManager`'s map of managed windows.
+    fn start_managing_window(&mut self, window: core_graphics::Window) -> Result<()> {
+        let window_id = window.number();
+        let w = Window::try_from(window)?;
+        let min_size = w.ax().min_size().unwrap_or_default();
+        let cw = container::Window {
+            id: window_id,
+            min_width: min_size.width,
+            min_height: min_size.height,
+        };
+
+        self.displays.add_window(cw)?;
+        self.windows.insert(window_id, w);
+        Ok(())
+    }
+
+    /// Update the information displayed on all managed status bars.
+    ///
+    /// This should be called whenever a change occurs regarding physical
+    /// displays, logical displays, or global focus.
     fn update_status_bars(&mut self) {
         let active_id = self.displays.active_logical_display_id();
         for sb in self.status_bars.values_mut() {
@@ -148,10 +138,13 @@ impl WindowManager {
         }
     }
 
+    /// Move all windows to where they should be and set their size.
+    ///
+    /// Should be called whenever a window is added, removed, moved, toggled
+    /// floating, minimised etc.
     fn apply_layout(&mut self) -> Result<()> {
         for pd in self.displays.physical_displays().values() {
             for (id, bounds) in pd.active_window_bounds() {
-                // ← only active LD
                 if let Some(window) = self.windows.get_mut(&id) {
                     window.update_bounds(bounds)?;
                     window.init()?;
@@ -219,30 +212,22 @@ impl WindowManager {
                     Event::Timer(ident) if ident == timer.ident() => {
                         println!("timer tick");
                     }
-                    _ => {
-                        println!("spurious event");
+                    Event::Timer(ident) => {
+                        println!("spurious timer event {ident}");
+                    }
+                    Event::Readable(ident) => {
+                        println!("spurious read event {ident}")
                     }
                 }
             }
         }
     }
 
-    // pub(super) fn reset_windows(&mut self) {
-    //     for display in self.physical_displays.values_mut() {
-    //         for window in display.windows_mut() {
-    //             if let Err(e) = window.update_bounds(*window.bounds()) {
-    //                 eprintln!(
-    //                     "could not set window {:?} back to designated size and location: {e:?}",
-    //                     window.cg().number()
-    //                 );
-    //             }
-    //         }
-    //     }
-    // }
-
     pub(super) fn handle_event(&mut self, event: event_loop::Event) {
+        use event_loop::Event::*;
+
         match event {
-            event_loop::Event::WindowAdded { display_id, window } => {
+            WindowAdded { display_id, window } => {
                 ReceivedWindowAddedEvent(display_id, window.number()).log(&mut self.logger);
 
                 if let Err(e) = self.handle_window_added(display_id, window) {
@@ -251,13 +236,14 @@ impl WindowManager {
             }
             // TODO: Need to not trigger this from windows that disappear due to
             //       switching logical display
-            event_loop::Event::WindowRemoved {
+            WindowRemoved {
                 display_id,
                 window_id,
             } => {
                 if self.minimised_windows.contains(&window_id) {
-                    // MacOS registers a CG window removed event when the application is minimised.
-                    // If its a window we intentionally minimised, don't actually remove it
+                    // MacOS registers a Core Graphics window removed event when
+                    // the application is minimised. If it is a window we
+                    // intentionally minimised, don't actually remove it.
                     return;
                 }
 
@@ -267,19 +253,12 @@ impl WindowManager {
                     eprintln!("failed to remove window: {e:?}");
                 }
             }
-
-            // Event::DisplayAdded {
-            //     display_id,
-            //     display,
-            // } => {
-            //     self.handle_display_added(display_id, display);
-            // }
-            event_loop::Event::KeyCommand { command } => {
+            KeyCommand { command } => {
                 ReceivedKeyCommand(command).log(&mut self.logger);
 
                 self.handle_key_command(command);
             }
-            event_loop::Event::WindowFocused { window_id } => {
+            WindowFocused { window_id } => {
                 ReceivedWindowFocusedEvent(window_id).log(&mut self.logger);
                 if let Err(e) = self.handle_window_focus(window_id) {
                     eprintln!("failed to focus window: {e:?}");
@@ -301,13 +280,9 @@ impl WindowManager {
     // window's parent split. Therefore:
     //  1. Get the physical display that said window is on.
     //  2. Add window to it.
-    fn handle_window_added(
-        &mut self,
-        display_id: DisplayId,
-        cg_window: core_graphics::Window,
-    ) -> Result<()> {
-        let window_id = cg_window.number();
-        let window = Window::try_from(cg_window)?;
+    fn handle_window_added(&mut self, id: DisplayId, cg: core_graphics::Window) -> Result<()> {
+        let window_id = cg.number();
+        let window = Window::try_from(cg)?;
         let min_size = window.ax().min_size().unwrap_or_default();
         let cw = container::Window {
             id: window_id,
@@ -328,38 +303,32 @@ impl WindowManager {
                     .minimise()
                     .map_err(Error::AxUi)?;
 
-                let status_bar = self.status_bars.get_mut(&display_id).unwrap();
-                status_bar.add_logical_id(lid);
+                self.status_bars.get_mut(&id).unwrap().add_logical_id(lid);
                 self.update_status_bars();
                 return Ok(());
             }
         };
 
-        let status_bar = self.status_bars.get_mut(&display_id).unwrap();
-        status_bar.add_logical_id(lid);
+        self.status_bars.get_mut(&id).unwrap().add_logical_id(lid);
         self.windows.insert(window_id, window);
         self.update_status_bars();
         self.apply_layout()?;
+
+        WindowAdded(lid, window_id).log(&mut self.logger);
         Ok(())
     }
 
     fn handle_window_removed(&mut self, display_id: DisplayId, window_id: WindowId) -> Result<()> {
-        if self.floating_windows.iter().any(|w| *w == window_id) {
+        if self.floating_windows.contains(&window_id) {
             return Ok(());
         }
 
         self.displays.remove_window(display_id.into(), window_id)?;
 
-        WindowRemoved(
-            display_id.into(),
-            self.displays.active_logical_display_id(),
-            window_id,
-        )
-        .log(&mut self.logger);
-
         self.windows.remove(&window_id);
         self.apply_layout()?;
 
+        WindowRemoved(self.displays.active_logical_display_id(), window_id).log(&mut self.logger);
         Ok(())
     }
 
@@ -368,11 +337,6 @@ impl WindowManager {
             KeyCommand::NewTerminal => {
                 OpenTerminalKeyCommand.log(&mut self.logger);
                 open_terminal();
-            }
-            KeyCommand::CloseWindow => {
-                // if let Err(e) = close_focused_window(&mut ctx.displays) {
-                //     println!("Failed to close window: {:?}", e);
-                // }
             }
             KeyCommand::Focus(direction) => {
                 ShiftFocusInDirectionKeyCommand(direction).log(&mut self.logger);
@@ -393,15 +357,6 @@ impl WindowManager {
                     println!("Failed to move window: {:?}", e);
                 }
             }
-            // KeyCommand::MoveWindow(_) => {
-            //     if let Ok(window_id) = ax_ui::Window::get_focused() {
-            //         for display in ctx.displays.values_mut() {
-            //             if display.move_window(window_id, direction) {
-            //                 break;
-            //             }
-            //         }
-            //     }
-            // }
             KeyCommand::ToggleVerticalSplit => {
                 ToggleVerticalSplitKeyCommand.log(&mut self.logger);
                 if let Err(e) = self.handle_split(container::Axis::Vertical) {
@@ -420,7 +375,6 @@ impl WindowManager {
                     eprintln!("failed to resize window: {e:?}");
                 }
             }
-
             KeyCommand::ToggleFloating => {
                 ToggleWindowFloatingKeyCommand.log(&mut self.logger);
                 if let Err(e) = self.handle_toggle_floating() {
@@ -441,51 +395,67 @@ impl WindowManager {
 
         if self.floating_windows.contains(&focused_window) {
             self.floating_windows.remove(&focused_window);
+
             let cw = container::Window {
                 id: focused_window,
                 min_width: 0.0,
                 min_height: 0.0,
             };
+
             self.displays.add_window(cw)?;
+            self.apply_layout()?;
+
             WindowMadeManaged(focused_window).log(&mut self.logger);
         } else {
             let pid = self.displays.display_of_window(focused_window).unwrap();
+
             self.displays.remove_window(pid, focused_window)?;
             self.floating_windows.insert(focused_window);
+            self.apply_layout()?;
+
             WindowMadeFloating(focused_window).log(&mut self.logger);
         }
 
-        self.apply_layout()
+        Ok(())
     }
 
+    /// Handle a resize event in a given direction.
     fn handle_resize(&mut self, direction: Direction) -> Result<()> {
         let focused_window = ax_ui::Window::try_get_focused().map_err(Error::AxUi)?;
+
+        let active_display = self.active_physical_display_mut();
+        active_display.set_focused_window(focused_window);
+        active_display.resize_focused_window(direction)?;
+
+        self.apply_layout()?;
+
         WindowResized(focused_window, direction).log(&mut self.logger);
-        self.displays
-            .active_physical_display_mut()
-            .set_focused_window(focused_window);
-        self.displays
-            .active_physical_display_mut()
-            .resize_focused_window(direction)?;
-        self.apply_layout()
+        Ok(())
     }
 
+    /// Handle splitting the currently focussed window's container along the
+    /// provided axis.
     fn handle_split(&mut self, axis: container::Axis) -> Result<()> {
         let focused_window = ax_ui::Window::try_get_focused().map_err(Error::AxUi)?;
         self.displays.split(axis)?;
+        self.apply_layout()?;
+
         WindowSplitAlongAxis(focused_window, axis).log(&mut self.logger);
-        self.apply_layout()
+        Ok(())
+    }
+
+    fn active_physical_display_mut(&mut self) -> &mut physical::Display {
+        self.displays.active_physical_display_mut()
     }
 
     fn handle_focus_shift(&mut self, direction: Direction) -> Result<()> {
-        ShiftFocusInDirectionKeyCommand(direction).log(&mut self.logger);
-        let newly_focussed = self
-            .displays
-            .active_physical_display_mut()
-            .shift_focus(direction)?;
+        let newly_focussed = self.active_physical_display_mut().shift_focus(direction)?;
 
         let window = self.windows.get_mut(&newly_focussed).unwrap();
-        window.ax().try_focus().map_err(Error::AxUi)
+        window.ax().try_focus().map_err(Error::AxUi)?;
+
+        ShiftFocusInDirectionKeyCommand(direction).log(&mut self.logger);
+        Ok(())
     }
 
     /// Move the currently focused window from one logical display to another.
@@ -502,11 +472,8 @@ impl WindowManager {
     //     on the currently active physical display.
     //  5. Try to add the removed Core Graphics window to the target logical
     //     display.
-    fn handle_move_focused_window_to_display(&mut self, target: LogicalDisplayId) -> Result<()> {
+    fn handle_move_focused_window_to_display(&mut self, target: logical::Id) -> Result<()> {
         let focused_window = ax_ui::Window::try_get_focused().map_err(Error::AxUi)?;
-
-        // Find the physical display that owns the currently focused window.
-        let owner = self.displays.display_of_window(focused_window).unwrap();
 
         let min_size = self
             .windows
@@ -522,6 +489,8 @@ impl WindowManager {
             min_height: min_size.height,
         };
 
+        // Find the physical display that owns the currently focused window.
+        let owner = self.displays.display_of_window(focused_window).unwrap();
         self.displays.remove_window(owner, focused_window)?;
 
         self.displays.add_window_to_logical(window, target)?;
@@ -538,6 +507,38 @@ impl WindowManager {
         self.apply_layout()?;
 
         WindowMovedToLogicalDisplay(focused_window, target).log(&mut self.logger);
+        Ok(())
+    }
+
+    /// Minimise all windows on the logical display referenced by the
+    /// provided ID.
+    fn try_minimise_logical(&mut self, id: logical::Id) -> Result<()> {
+        for w in self.displays.get_logical(id).unwrap().window_ids() {
+            self.minimised_windows.insert(w);
+            self.windows
+                .get_mut(&w)
+                .unwrap()
+                .ax()
+                .minimise()
+                .map_err(Error::AxUi)?;
+        }
+
+        Ok(())
+    }
+
+    /// Un-minimise all windows on the logical display referenced by the
+    /// provided ID.
+    fn try_unminimise_logical(&mut self, id: logical::Id) -> Result<()> {
+        for w in self.displays.get_logical(id).unwrap().window_ids() {
+            self.minimised_windows.insert(w);
+            self.windows
+                .get_mut(&w)
+                .unwrap()
+                .ax()
+                .unminimise()
+                .map_err(Error::AxUi)?;
+        }
+
         Ok(())
     }
 
@@ -558,137 +559,53 @@ impl WindowManager {
     /// We only need to focus the active display if the logical display already
     /// exists. Ones that have no windows will have been deleted when they were
     /// last focused off of.
-    fn handle_focus_logical_display(&mut self, new_lid: LogicalDisplayId) -> Result<()> {
+    fn handle_focus_logical_display(&mut self, new_lid: logical::Id) -> Result<()> {
         let current_lid = self.displays.active_logical_display_id();
         if current_lid == new_lid {
             return Ok(());
         }
 
-        let current_pid = *self
-            .displays
-            .physical_displays()
-            .iter()
-            .find(|&(_, &ref pd)| pd.has_logical_display(current_lid))
-            .map(|(pid, _)| pid)
-            .unwrap();
-
-        let target_pid_exists = self
-            .displays
-            .physical_displays()
-            .iter()
-            .find(|&(_, &ref pd)| pd.has_logical_display(new_lid))
-            .map(|(&pid, _)| pid);
+        let current_pid = self.displays.logical_id_owner(current_lid).unwrap();
+        let target_pid_exists = self.displays.logical_id_owner(new_lid);
 
         let target_pid = target_pid_exists.unwrap_or(current_pid);
-        let target_exists = target_pid_exists.is_some();
         let same_pd = current_pid == target_pid;
 
-        println!("target_pid {target_pid}, current_pid: {current_pid}, same_pd: {same_pd}");
-
-        // if target_exists && !same_pd {
-        //     let target_pid_active_lid = self
-        //         .displays
-        //         .physical_displays()
-        //         .get(&target_pid)
-        //         .unwrap()
-        //         .active_logical_id();
-        //
-        //     if target_pid_active_lid == new_lid {
-        //         if let Some(focused) = self.displays.focus_display(new_lid) {
-        //             self.windows
-        //                 .get_mut(&focused)
-        //                 .unwrap()
-        //                 .ax()
-        //                 .try_focus()
-        //                 .map_err(Error::AxUi)?;
-        //         }
-        //         self.update_status_bars();
-        //         return Ok(());
-        //     }
-        // }
-
-        let current_ld_window_ids = self
-            .displays
-            .physical_displays()
-            .get(&current_pid)
-            .unwrap()
-            .active_logical_display()
-            .unwrap()
-            .window_ids()
-            .into_iter()
-            .collect::<Vec<_>>();
-
-        if same_pd {
-            for wd in &current_ld_window_ids {
-                self.minimised_windows.insert(*wd);
-                self.windows
-                    .get_mut(&wd)
-                    .unwrap()
-                    .ax()
-                    .minimise()
-                    .map_err(Error::AxUi)?;
-            }
+        let to_minimise: logical::Id = if same_pd {
+            current_lid
         } else {
-            let target_current_window_ids = self
-                .displays
+            self.displays
                 .physical_displays()
                 .get(&target_pid)
                 .unwrap()
-                .active_logical_display()
-                .unwrap()
-                .window_ids()
-                .into_iter()
-                .collect::<Vec<_>>();
+                .active_logical_id()
+        };
+        self.try_minimise_logical(to_minimise)?;
 
-            for wid in &target_current_window_ids {
-                self.minimised_windows.insert(*wid);
-                self.windows
-                    .get_mut(wid)
-                    .unwrap()
-                    .ax()
-                    .minimise()
-                    .map_err(Error::AxUi)?;
-            }
-        }
-
-        if !target_exists {
+        if target_pid_exists.is_none() {
             self.displays.create_logical_display(current_pid, new_lid);
         }
 
         self.displays.switch_logical_display(target_pid, new_lid);
 
-        if same_pd && current_ld_window_ids.is_empty() {
+        if same_pd
+            && self
+                .displays
+                .get_logical(current_lid)
+                .unwrap()
+                .window_ids()
+                .is_empty()
+        {
             // Empty LD will already have been removed by DM
             self.status_bars
-                .get_mut(&DisplayId::from(current_pid))
+                .get_mut(&current_pid.into())
                 .unwrap()
                 .remove_logical_id(current_lid);
         }
 
-        let new_window_ids: Vec<_> = self
-            .displays
-            .physical_displays()
-            .get(&target_pid)
-            .unwrap()
-            .logical(new_lid)
-            .unwrap()
-            .window_ids()
-            .into_iter()
-            .collect();
+        self.try_unminimise_logical(new_lid)?;
 
-        println!("window on target id to focus: {new_window_ids:?}");
-
-        for wid in &new_window_ids {
-            self.minimised_windows.remove(wid);
-            self.windows
-                .get_mut(wid)
-                .unwrap()
-                .ax()
-                .unminimise()
-                .map_err(Error::AxUi)?;
-        }
-
-        if let Some(sb) = self.status_bars.get_mut(&DisplayId::from(target_pid)) {
+        if let Some(sb) = self.status_bars.get_mut(&target_pid.into()) {
             sb.add_logical_id(new_lid);
         }
 

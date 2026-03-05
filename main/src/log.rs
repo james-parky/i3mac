@@ -1,5 +1,5 @@
-use crate::display::PhysicalDisplayId;
-use crate::{container::Axis, display::LogicalDisplayId};
+use crate::container::Axis;
+use crate::display;
 use core_graphics::{Direction, DisplayId, KeyCommand, WindowId};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -87,22 +87,22 @@ pub enum Message {
     ReceivedWindowFocusedEvent(WindowId),
     ReceivedKeyCommand(KeyCommand),
 
-    WindowAdded(PhysicalDisplayId, LogicalDisplayId, WindowId),
-    WindowRemoved(PhysicalDisplayId, LogicalDisplayId, WindowId),
+    WindowAdded(display::logical::Id, WindowId),
+    WindowRemoved(display::logical::Id, WindowId),
     WindowFocused(WindowId),
     WindowMadeFloating(WindowId),
     WindowMadeManaged(WindowId),
     WindowResized(WindowId, Direction),
     WindowSplitAlongAxis(WindowId, Axis),
     ShiftedFocusInDirection(Direction),
-    WindowMovedToLogicalDisplay(WindowId, LogicalDisplayId),
-    FocusedLogicalDisplay(LogicalDisplayId),
+    WindowMovedToLogicalDisplay(WindowId, display::logical::Id),
+    FocusedLogicalDisplay(display::logical::Id),
 
     OpenTerminalKeyCommand,
     // ClosedWindowKeyCommand(WindowId),
     ShiftFocusInDirectionKeyCommand(Direction),
-    FocusLogicalDisplayKeyCommand(LogicalDisplayId),
-    MoveFocusedWindowToLogicalDisplayKeyCommand(LogicalDisplayId),
+    FocusLogicalDisplayKeyCommand(display::logical::Id),
+    MoveFocusedWindowToLogicalDisplayKeyCommand(display::logical::Id),
     ToggleVerticalSplitKeyCommand,
     ToggleHorizontalSplitKeyCommand,
     ResizeWindowInDirectionKeyCommand(Direction),
@@ -123,8 +123,8 @@ impl Log for Message {
             ReceivedWindowFocusedEvent(_) => Level::Trace,
             ReceivedKeyCommand(_) => Level::Trace,
 
-            WindowAdded(_, _, _) => Level::Info,
-            WindowRemoved(_, _, _) => Level::Info,
+            WindowAdded(_, _) => Level::Info,
+            WindowRemoved(_, _) => Level::Info,
             WindowFocused(_) => Level::Info,
             WindowMadeFloating(_) => Level::Info,
             WindowMadeManaged(_) => Level::Info,
@@ -160,9 +160,9 @@ impl Log for Message {
             }
             ReceivedKeyCommand(kc) => format!("keyboard command input received {kc:?}"),
 
-            WindowAdded(p_id, l_id, w_id) => format!("added window {w_id} to {p_id}{l_id}"),
-            WindowRemoved(p_id, l_id, w_id) => {
-                format!("removed window {w_id} from {p_id}{l_id}")
+            WindowAdded(l_id, w_id) => format!("added window {w_id} to {l_id}"),
+            WindowRemoved(l_id, w_id) => {
+                format!("removed window {w_id} from {l_id}")
             }
             WindowFocused(w_id) => format!("focused window {w_id}"),
             WindowMadeFloating(w_id) => format!("toggle window {w_id} as floating"),
