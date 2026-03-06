@@ -1,3 +1,4 @@
+use crate::container::Empty;
 use crate::{
     container::{self, Axis, Container},
     error::{Error, Result},
@@ -75,7 +76,7 @@ impl Display {
         };
 
         Display {
-            root: Container::Empty { bounds },
+            root: Container::Empty(Empty::new(bounds)),
             focused_window: None,
             config,
         }

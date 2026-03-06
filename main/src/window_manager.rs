@@ -34,6 +34,13 @@ use std::{
     time::Duration,
 };
 
+// Arbitrary reasonable constant that stop windows getting too
+// small. When this value is too small, the OS doesn't let the
+// smaller window get smaller, but this code will make the larger
+// window get larger and thus they overlap.
+pub(crate) const MIN_WINDOW_SIZE: f64 = 200.0;
+pub(crate) const RESIZE_AMOUNT: f64 = 50.0;
+
 pub struct WindowManager {
     /// A map between window IDs reported by CoreGraphics, and our managed
     /// window objects.
