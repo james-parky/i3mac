@@ -1,7 +1,5 @@
-use crate::container::Axis;
 use crate::{
-    container,
-    container::Container,
+    container::{self, Axis, Container},
     error::{Error, Result},
     status_bar::StatusBar,
 };
@@ -57,10 +55,15 @@ pub(crate) struct Display {
 }
 
 impl Display {
+    /// Create a new `Display` with the provided `Bounds` and `Config`.
+    ///
+    /// The height of a `Display` does **not** include the screen space reserved
+    /// for the Apple menu bar at the top of the screen, and i3mac's status bar
+    /// at the bottom of the screen.
     pub(crate) fn new(cg_bounds: Bounds, config: Config) -> Self {
-        // Core Graphics bounds -- the bounds used for a `PhysicalDisplay` do
-        // not include the Apple menu bar; we need to subtract the height of
-        // said bar to stop vertical split windows from overlapping each other.
+        // Core Graphics bounds -- the bounds used for a `physical::Display` do
+        // not include the Apple menu bar so we need to subtract it to get the
+        // usable area for windows to exist in.
         const MENU_BAR_HEIGHT: f64 = 37.0;
 
         // We also subtract the height of the i3-style `StatusBar` added to the
@@ -78,29 +81,42 @@ impl Display {
         }
     }
 
+    /// Return's the logical display's currently focussed window's ID.
     pub fn focused_window(&self) -> Option<WindowId> {
         self.focused_window
     }
 
+    /// Shift focus within the logical display's managed windows in some
+    /// direction. If the focus cannot shift any more in the provided
+    /// `direction`, focus remains on the currently focused window.
     // In order to switch focus in some direction:
-    //  - Create a list of all window, sorted by either x or y position, based
-    //    on the given direction.
     //  - If there are no windows at all (including the one that should be
     //    currently focused), return some error.
+    //  - Create a list of all window, sorted by either x or y position, based
+    //    on the given direction.
     //  - Find the focused window in this list.
     //  - If there are no more windows in the direction of the shift, return.
     //  - If there is one, focus it and return.
     pub fn shift_focus(&mut self, direction: Direction) -> Result<WindowId> {
-        let mut windows = self.all_window_bounds();
-        if windows.is_empty() {
-            return Err(Error::CannotFocusEmptyDisplay);
-        }
+        use Direction::*;
 
-        match direction {
-            Direction::Left | Direction::Right => windows.sort_by(|a, b| a.1.x.total_cmp(&b.1.x)),
-            Direction::Up | Direction::Down => windows.sort_by(|a, b| a.1.y.total_cmp(&b.1.y)),
+        // Declared with a block to drop mutability after sorting.
+        let windows: Vec<_> = {
+            let mut windows: Vec<_> = self.window_bounds().into_iter().collect();
+            if windows.is_empty() {
+                return Err(Error::CannotFocusEmptyDisplay);
+            }
+
+            match direction {
+                Left | Right => windows.sort_by(|a, b| a.1.x.total_cmp(&b.1.x)),
+                Up | Down => windows.sort_by(|a, b| a.1.y.total_cmp(&b.1.y)),
+            };
+
+            windows
         };
 
+        // TODO: should really return an error here for both unwraps since the
+        //       focused window SHOULD exist
         let current_focused = self.focused_window.unwrap_or(windows[0].0);
         let current_focussed_index = windows
             .iter()
@@ -108,71 +124,57 @@ impl Display {
             .unwrap_or(0);
 
         let next_focus = match (current_focussed_index, direction) {
-            (n, Direction::Left | Direction::Up) if n != 0 => windows[n - 1].0,
-            (n, Direction::Right | Direction::Down) if n < windows.len() - 1 => windows[n + 1].0,
+            (n, Left | Up) if n != 0 => windows[n - 1].0,
+            (n, Right | Down) if n < windows.len() - 1 => windows[n + 1].0,
             _ => windows[current_focussed_index].0,
         };
+
         self.focused_window = Some(next_focus);
         Ok(next_focus)
     }
 
-    fn all_window_bounds(&self) -> Vec<(WindowId, Bounds)> {
-        fn recurse(c: &Container, out: &mut Vec<(WindowId, Bounds)>) {
-            match c {
-                Container::Leaf { window, .. } => {
-                    if let Some(b) = c.window_bounds() {
-                        out.push((window.id, b));
-                    }
-                }
-                Container::Split { children, .. } => {
-                    for child in children {
-                        recurse(child, out);
-                    }
-                }
-                Container::Empty { .. } => {}
-            }
-        }
-
-        let mut result = Vec::new();
-        recurse(&self.root, &mut result);
-        result
-    }
-
+    /// Returns a map of window ID to its bounds for all windows the logical
+    /// display manages.
     pub fn window_bounds(&self) -> HashMap<WindowId, Bounds> {
         self.root.window_bounds_by_id()
     }
 
+    /// Returns the set of all window IDs the logical display manages.
     pub(crate) fn window_ids(&self) -> HashSet<WindowId> {
         self.root.window_ids()
     }
 
-    // When splitting a logical display in some direction:
-    //  1. If there is some focused window, convert its parent leaf into a split
-    //     of the given direction, and shift the leaf into it.
-    //  2. If there is no focused window, switch the split direction of the root
-    //     container.
-    pub fn split(&mut self, direction: Axis) -> Result<()> {
-        if let Some(window_id) = self.focused_window {
-            let container = self
-                .root
-                .parent_leaf_of_window_mut(window_id)
-                .ok_or(Error::CannotFindParentLeaf)?;
-            container.split(direction)
+    /// Split the logical display's focused window's container along the
+    /// provided `axis`.
+    ///
+    /// If there is no focussed window, change the current split direction of
+    /// the logical display's `root` container.
+    pub fn split(&mut self, axis: Axis) -> Result<()> {
+        let container = if let Some(id) = self.focused_window {
+            self.root
+                .parent_leaf_of_window_mut(id)
+                .ok_or(Error::CannotFindParentLeaf)?
         } else {
-            self.root.split(direction)
-        }
+            &mut self.root
+        };
+
+        container.split(axis)
     }
 
-    pub fn set_focused_window(&mut self, window_id: WindowId) {
+    /// Set the logical display's focussed window to `window_id` or return an
+    /// error if the logical display does not manage the window.
+    pub fn set_focused_window(&mut self, window_id: WindowId) -> Result<()> {
         if self.window_ids().contains(&window_id) {
             self.focused_window = Some(window_id);
+            Ok(())
+        } else {
+            Err(Error::WindowNotFound)
         }
     }
 
     pub fn remove_window(&mut self, window_id: WindowId) -> Result<Option<WindowId>> {
-        let removed = self
-            .root
-            .remove_window(window_id, self.config.window_padding())?;
+        let padding = self.config.window_padding();
+        let removed = self.root.remove_window(window_id, padding)?;
 
         if self.focused_window == Some(window_id) {
             self.focused_window = self.window_ids().iter().next().copied();
@@ -181,6 +183,11 @@ impl Display {
         Ok(removed)
     }
 
+    /// Add a window to the logical display, accounting for its configured
+    /// minimum bounds.
+    ///
+    /// The window will be added as a sibling of the currently focused window if
+    /// one exists, otherwise it will be added to the root.
     // When adding a window to a logical display, see if there is a previously
     // focused window.
     // If so:
@@ -189,25 +196,24 @@ impl Display {
     // If there is no window:
     //  - Add new window as a child of the root (horizontal split)
     pub fn add_window(&mut self, window: container::Window) -> Result<()> {
-        println!("adding window {window:?} to {self:?}");
-        let container = if let Some(focused_id) = self.focused_window
-            && let Some(container) = self.root.get_parent_of_window_mut(focused_id)
-        {
-            container
-        } else {
-            &mut self.root
+        // TODO: should probably error here if there is a focused window but
+        //       there is no parent for it
+        let container = match self.focused_window {
+            None => &mut self.root,
+            Some(id) => match self.root.get_parent_of_window_mut(id) {
+                Some(c) => c,
+                None => &mut self.root,
+            },
         };
 
-        match container.add_window(window, self.config.window_padding()) {
-            Ok(()) => {
-                self.focused_window = Some(window.id);
-                println!("ld after add: {self:?}");
-                Ok(())
-            }
-            Err(e) => Err(e),
-        }
+        container.add_window(window, self.config.window_padding())?;
+
+        self.focused_window = Some(window.id);
+        Ok(())
     }
 
+    /// If there is a focussed window, resize it in `direction` by the
+    /// configured amount, accounting for any padding.
     pub fn resize_focused_window(&mut self, direction: Direction) -> Result<()> {
         if let Some(focused_id) = self.focused_window {
             self.resize_window_in_direction(focused_id, direction)?;
@@ -216,12 +222,10 @@ impl Display {
         Ok(())
     }
 
-    pub fn resize_window_in_direction(
-        &mut self,
-        window_id: WindowId,
-        direction: Direction,
-    ) -> Result<()> {
-        self.root
-            .resize_window(window_id, direction, self.config.window_padding())
+    /// Resize the window corresponding to `id` in `direction` by the configured
+    /// amount, accounting for any padding.
+    pub fn resize_window_in_direction(&mut self, id: WindowId, direction: Direction) -> Result<()> {
+        let padding = self.config.window_padding();
+        self.root.resize_window(id, direction, padding)
     }
 }
