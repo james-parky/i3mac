@@ -53,7 +53,6 @@ impl Window {
     }
 
     pub(crate) fn init(&mut self) -> Result<()> {
-        println!("moving window {} to {:?}", self.cg.number(), self.bounds);
         self.ax
             .try_move_to(self.bounds.x, self.bounds.y)
             .map_err(Error::AxUi)?;
