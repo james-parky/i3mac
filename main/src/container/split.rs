@@ -1,7 +1,6 @@
 use crate::{
     container::{Axis, Container, Window, leaf::Leaf, spread_bounds_along_axis},
-    error::Error,
-    error::Result,
+    error::{Error, Result},
     window_manager,
 };
 use core_graphics::{Bounds, Direction, WindowId};
@@ -276,6 +275,16 @@ impl Split {
         b.resize(new_second_bounds)?;
 
         Ok(())
+    }
+
+    // This is not a valid `Container` since the child bounds are wrong. It only
+    // servers to be used in tests that are not checking correctness of bounds.
+    #[cfg(test)]
+    pub fn dummy(axis: Axis, window_ids: &[WindowId]) -> Container {
+        use crate::container::tests::dummy_bounds;
+
+        let children = window_ids.iter().map(Leaf::dummy).collect();
+        Container::Split(Split::new(dummy_bounds(), axis, 0.0, children))
     }
 }
 

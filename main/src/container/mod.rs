@@ -1,7 +1,6 @@
 mod axis;
 mod leaf;
 mod split;
-mod tests;
 
 pub use crate::container::axis::Axis;
 use crate::container::leaf::Leaf;
@@ -24,6 +23,17 @@ impl From<crate::window::Window> for Window {
             id: window.cg().number(),
             min_height: min_size.height,
             min_width: min_size.width,
+        }
+    }
+}
+
+#[cfg(test)]
+impl Window {
+    pub fn dummy(id: WindowId) -> Self {
+        Window {
+            id,
+            min_width: 100.0,
+            min_height: 100.0,
         }
     }
 }
@@ -52,6 +62,12 @@ impl Empty {
         let children = vec![Container::Leaf(Leaf::new(leaf_bounds[0], padding, window))];
 
         Split::new(self.bounds, Axis::default(), padding, children)
+    }
+
+    #[cfg(test)]
+    pub fn dummy() -> Container {
+        use crate::container::tests::dummy_bounds;
+        Container::Empty(Empty::new(dummy_bounds()))
     }
 }
 
@@ -262,4 +278,145 @@ fn spread_bounds_along_axis(original: Bounds, axis: Axis, n: usize, padding: f64
             },
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use Axis::{Horizontal, Vertical};
+    use core_graphics::Bounds;
+
+    const PADDING_VALUES: &[f64] = &[0.0, 5.0, 10.0, 17.5];
+    const AXES: &[Axis] = &[Horizontal, Vertical];
+    const CHILD_NUMS: &[usize] = &[1, 2, 3, 4, 5, 6, 7, 8];
+
+    const EPSILON: f64 = 1e-10;
+
+    const fn approx(a: f64, b: f64) -> bool {
+        (a - b).abs() < EPSILON
+    }
+
+    pub fn dummy_bounds() -> Bounds {
+        Bounds {
+            x: 0.0,
+            y: 0.0,
+            width: 800.0,
+            height: 600.0,
+        }
+    }
+
+    // Get the `(position, size)` of the give bounds along that given axis.
+    fn along(b: &Bounds, axis: Axis) -> (f64, f64) {
+        match axis {
+            Vertical => (b.y, b.height),
+            Horizontal => (b.x, b.width),
+        }
+    }
+
+    // Get the `(position, size)` of the give bounds along the axis
+    // perpendicular to `axis`.
+    fn perpendicular(b: &Bounds, axis: Axis) -> (f64, f64) {
+        let perp_axis = match axis {
+            Vertical => Horizontal,
+            Horizontal => Vertical,
+        };
+        along(b, perp_axis)
+    }
+
+    fn transpose(b: Bounds) -> Bounds {
+        Bounds {
+            x: b.y,
+            y: b.x,
+            width: b.height,
+            height: b.width,
+        }
+    }
+
+    #[test]
+    fn spread_bounds() {
+        let original = dummy_bounds();
+
+        for &padding in PADDING_VALUES {
+            for &axis in AXES {
+                for &n in CHILD_NUMS {
+                    let out = spread_bounds_along_axis(original, axis, n, padding);
+                    assert_eq!(out.len(), n);
+                    assert!(approx(out[0].x, original.x + padding));
+                    assert!(approx(out[0].y, original.y + padding));
+
+                    let total_inner_gap = (n - 1) as f64 * padding;
+
+                    let available_space = match axis {
+                        Vertical => original.height - 2.0 * padding - total_inner_gap,
+                        Horizontal => original.width - 2.0 * padding - total_inner_gap,
+                    };
+                    let child_share = available_space / n as f64;
+                    let expected_unchanged_dimension = match axis {
+                        Vertical => original.width - 2.0 * padding,
+                        Horizontal => original.height - 2.0 * padding,
+                    };
+
+                    let last = &out[n - 1];
+                    match axis {
+                        Vertical => assert!(approx(
+                            last.y + last.height,
+                            original.y + original.height - padding
+                        )),
+                        Horizontal => assert!(approx(
+                            last.x + last.width,
+                            original.x + original.width - padding
+                        )),
+                    }
+
+                    // The original bounds (x/y) positions dependent on axis
+                    let (orig_pos, _) = along(&original, axis);
+                    let (original_perp_pos, _) = perpendicular(&original, axis);
+
+                    for (i, b) in out.iter().enumerate() {
+                        let (pos, size) = along(b, axis);
+                        let (perp_pos, perp_size) = perpendicular(b, axis);
+
+                        // Each child should be the same, correct size
+                        assert!(approx(size, child_share));
+                        // The dimension perpendicular to the axis we are
+                        // spreading along should just be what it was originally
+                        // (accounting for padding)
+                        assert!(approx(perp_size, expected_unchanged_dimension));
+                        // Accounting for padding, all children should have the
+                        // same (x/y) value perpendicular to the spreading axis
+                        assert!(approx(perp_pos, original_perp_pos + padding));
+                        // All children should have equally spaced including
+                        // padding in between them
+                        assert!(approx(
+                            pos,
+                            orig_pos + padding + i as f64 * (child_share + padding)
+                        ));
+                    }
+
+                    let covered = match axis {
+                        Vertical => out.iter().map(|b| b.height).sum(),
+                        Horizontal => out.iter().map(|b| b.width).sum(),
+                    };
+                    assert!(approx(covered, available_space));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn spread_bounds_along_axis_symmetry() {
+        let original = dummy_bounds();
+        let transposed = transpose(original);
+
+        let padding = 12.0;
+        let n = 4;
+
+        let h = spread_bounds_along_axis(original, Horizontal, n, padding);
+        let v = spread_bounds_along_axis(transposed, Vertical, n, padding);
+
+        for (bh, bv) in h.iter().zip(v.iter()) {
+            assert!(approx(bh.width, bv.height));
+            assert!(approx(bh.height, bv.width));
+        }
+    }
 }
