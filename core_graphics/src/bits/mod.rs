@@ -1,4 +1,5 @@
 mod coregraphics;
+mod display;
 mod event;
 mod window;
 
@@ -16,6 +17,8 @@ pub(super) use window::{
     OWNER_PID_DICTIONARY_KEY, SHARING_STATE_DICTIONARY_KEY, STORE_TYPE_DICTIONARY_KEY,
     WindowListOption,
 };
+
+pub(super) use display::*;
 
 pub use event::{
     CGEventGetFlags, CGEventGetIntegerValueField, CGEventRef, CGEventTapCreate, CGEventTapEnable,

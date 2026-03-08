@@ -1,4 +1,5 @@
 use core_foundation::CFArrayRef;
+use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use std::{
     ffi::c_uint,
@@ -6,7 +7,7 @@ use std::{
     ops::BitOr,
 };
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 /// The data type used to store window identifiers.
 #[repr(transparent)]
 pub struct WindowId(c_uint);

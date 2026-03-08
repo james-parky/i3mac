@@ -1,14 +1,44 @@
-use crate::bits::{CGDisplayBounds, CGError, CGGetActiveDisplayList, CGMainDisplayID};
+use crate::bits::{
+    CGDisplayBounds, CGDisplayModelNumber, CGDisplaySerialNumber, CGDisplayVendorNumber, CGError,
+    CGGetActiveDisplayList, CGMainDisplayID,
+};
 use crate::window::Window;
 use crate::{Bounds, DisplayId, Error, WindowId};
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::ffi::c_uint;
 
 #[derive(Debug, Clone)]
 pub struct Display {
+    pub id: DisplayId,
     pub bounds: Bounds,
-    // pub windows: Vec<Window>,
     pub windows: HashSet<Window>,
+    pub identity: Identity,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Identity {
+    vendor: u32,
+    model: u32,
+    serial: u32,
+}
+
+impl Identity {
+    pub const DUMMY: Self = Self {
+        vendor: 0,
+        model: 0,
+        serial: 0,
+    };
+
+    pub fn from_display_id(id: DisplayId) -> Self {
+        unsafe {
+            Self {
+                vendor: CGDisplayVendorNumber(id.into()),
+                model: CGDisplayModelNumber(id.into()),
+                serial: CGDisplaySerialNumber(id.into()),
+            }
+        }
+    }
 }
 
 impl Display {
@@ -45,8 +75,10 @@ impl Display {
 
     fn new(id: DisplayId) -> Display {
         Self {
+            id,
             bounds: unsafe { CGDisplayBounds(id.into()) }.into(),
             windows: HashSet::new(),
+            identity: Identity::from_display_id(id),
         }
     }
 

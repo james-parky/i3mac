@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 core_foundation = { path = "../core_foundation" }
 libc = { workspace = true }
+serde = { version = "1.0.228", features = ["derive"] }
