@@ -1,4 +1,5 @@
 use crate::display::logical;
+use crate::log::{Level, Logger};
 use crate::{
     container,
     error::{Error, Result},
@@ -32,12 +33,14 @@ impl From<Id> for DisplayId {
 #[cfg_attr(test, derive(Default))]
 pub struct Config {
     pub window_padding: Option<f64>,
+    pub log_level: Level,
 }
 
 impl From<crate::config::Config> for Config {
     fn from(value: crate::config::Config) -> Self {
         Self {
             window_padding: value.window_padding,
+            log_level: value.log_level,
         }
     }
 }
@@ -47,11 +50,12 @@ pub(crate) struct Display {
     logical_displays: HashMap<logical::Id, logical::Display>,
     active_logical_id: logical::Id,
     config: Config,
+    logger: Logger,
 }
 
 impl Display {
-    pub fn new(logical_id: logical::Id, bounds: Bounds, config: Config) -> Self {
-        let logical_display = logical::Display::new(bounds, config.into());
+    pub fn new(physical_id: Id, logical_id: logical::Id, bounds: Bounds, config: Config) -> Self {
+        let logical_display = logical::Display::new(logical_id, bounds, config.into());
         // for window in cg_display.windows {
         //     // TODO: handle
         //     let cw = container::Window{
@@ -65,11 +69,14 @@ impl Display {
         let mut logical_displays = HashMap::new();
         logical_displays.insert(logical_id, logical_display);
 
+        let logger =
+            Logger::try_new("/dev/stdout", config.log_level, physical_id.to_string()).unwrap();
         Self {
             bounds,
             logical_displays,
             active_logical_id: logical_id,
             config,
+            logger,
         }
     }
 
@@ -147,8 +154,8 @@ impl Display {
     }
 
     pub(super) fn create_logical_display(&mut self, id: logical::Id) {
-        self.logical_displays
-            .insert(id, logical::Display::new(self.bounds, self.config.into()));
+        let ld = logical::Display::new(id, self.bounds, self.config.into());
+        self.logical_displays.insert(id, ld);
     }
 
     pub fn remove_logical_display(&mut self, id: logical::Id) {

@@ -1,3 +1,4 @@
+mod log;
 pub mod logical;
 pub mod physical;
 mod tests;
@@ -6,6 +7,7 @@ use crate::container;
 use crate::container::Axis;
 use crate::error::Error;
 use crate::error::Result;
+use crate::log::Logger;
 use container::Window;
 use core_graphics::{Bounds, WindowId};
 use std::collections::{HashMap, HashSet};
@@ -99,7 +101,7 @@ impl Displays {
             .next_logical_display_id(pid)
             .expect("already have 10 logical displays");
 
-        let pd = physical::Display::new(next_logical_id, bounds, cfg);
+        let pd = physical::Display::new(pid, next_logical_id, bounds, cfg);
 
         self.physical_displays.insert(pid, pd);
         self.active_logical_display_ids.insert(next_logical_id, pid);

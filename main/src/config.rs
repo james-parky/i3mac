@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Default, Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
     pub window_padding: Option<f64>,
-    pub(crate) log_level: Level,
+    pub log_level: Level,
 }
 
 impl Config {

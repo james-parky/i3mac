@@ -44,26 +44,31 @@ impl Display for Level {
 }
 
 pub trait Log {
-    fn prefix(&self) -> String;
     fn level(&self) -> Level;
     fn message(&self) -> String;
     fn log(&self, logger: &mut Logger) {
-        logger.log(self.level(), &self.prefix(), &self.message())
+        logger.log(self.level(), &self.message())
     }
 }
 
+#[derive(Debug)]
 pub struct Logger {
     file: File,
     level: Level,
+    prefix: String,
 }
 
 impl Logger {
-    pub fn try_new<P: AsRef<Path>>(path: P, level: Level) -> std::io::Result<Self> {
+    pub fn try_new<P: AsRef<Path>>(path: P, level: Level, prefix: String) -> std::io::Result<Self> {
         let file = OpenOptions::new().create(true).append(true).open(path)?;
-        Ok(Self { file, level })
+        Ok(Self {
+            file,
+            level,
+            prefix,
+        })
     }
 
-    pub fn log(&mut self, level: Level, prefix: &str, message: &str) {
+    pub fn log(&mut self, level: Level, message: &str) {
         if level >= self.level {
             // TODO: what to do about errors logging? default to stdout/stderr print?
             let _ = self.file.write_all(
@@ -72,7 +77,7 @@ impl Logger {
                     current_time(),
                     std::process::id(),
                     level,
-                    prefix,
+                    self.prefix,
                     message
                 )
                 .as_bytes(),
@@ -110,10 +115,6 @@ pub enum Message {
 }
 
 impl Log for Message {
-    fn prefix(&self) -> String {
-        "WM".into()
-    }
-
     fn level(&self) -> Level {
         use Message::*;
 

@@ -1,7 +1,12 @@
-use crate::container::Empty;
+use crate::log::Level;
 use crate::{
-    container::{self, Axis, Container},
+    container::{self, Axis, Container, Empty},
+    display::log::Message::{
+        LogicalAddedWindow, LogicalNew, LogicalResizeWindow, LogicalSetFocused, LogicalShiftFocus,
+        LogicalSplitContainer, LogicalSplitRoot,
+    },
     error::{Error, Result},
+    log::{Log, Logger},
     status_bar::StatusBar,
 };
 use core_graphics::{Bounds, Direction, WindowId};
@@ -29,15 +34,23 @@ impl From<usize> for Id {
     }
 }
 
+impl Id {
+    fn as_log_prefix(&self) -> String {
+        format!("{self:?}")
+    }
+}
+
 #[derive(Debug, Copy, Clone)]
 pub struct Config {
     window_padding: Option<f64>,
+    log_level: Level,
 }
 
 impl From<crate::display::physical::Config> for Config {
     fn from(config: crate::display::physical::Config) -> Self {
         Self {
             window_padding: config.window_padding,
+            log_level: config.log_level,
         }
     }
 }
@@ -50,9 +63,11 @@ impl Config {
 
 #[derive(Debug)]
 pub(crate) struct Display {
+    id: Id,
     root: Container,
     focused_window: Option<WindowId>,
     config: Config,
+    logger: Logger,
 }
 
 impl Display {
@@ -61,7 +76,7 @@ impl Display {
     /// The height of a `Display` does **not** include the screen space reserved
     /// for the Apple menu bar at the top of the screen, and i3mac's status bar
     /// at the bottom of the screen.
-    pub(crate) fn new(cg_bounds: Bounds, config: Config) -> Self {
+    pub(crate) fn new(id: Id, cg_bounds: Bounds, config: Config) -> Self {
         // Core Graphics bounds -- the bounds used for a `physical::Display` do
         // not include the Apple menu bar so we need to subtract it to get the
         // usable area for windows to exist in.
@@ -75,10 +90,16 @@ impl Display {
             ..cg_bounds
         };
 
+        let mut logger =
+            Logger::try_new("/dev/stdout", config.log_level, id.as_log_prefix()).unwrap();
+
+        LogicalNew.log(&mut logger);
         Display {
+            id,
             root: Container::Empty(Empty::new(bounds)),
             focused_window: None,
             config,
+            logger,
         }
     }
 
@@ -131,6 +152,8 @@ impl Display {
         };
 
         self.focused_window = Some(next_focus);
+
+        LogicalShiftFocus(direction, next_focus).log(&mut self.logger);
         Ok(next_focus)
     }
 
@@ -152,10 +175,15 @@ impl Display {
     /// the logical display's `root` container.
     pub fn split(&mut self, axis: Axis) -> Result<()> {
         let container = if let Some(id) = self.focused_window {
-            self.root
+            let c = self
+                .root
                 .parent_leaf_of_window_mut(id)
-                .ok_or(Error::CannotFindParentLeaf)?
+                .ok_or(Error::CannotFindParentLeaf)?;
+
+            LogicalSplitContainer(axis, id).log(&mut self.logger);
+            c
         } else {
+            LogicalSplitRoot(axis).log(&mut self.logger);
             &mut self.root
         };
 
@@ -167,6 +195,7 @@ impl Display {
     pub fn set_focused_window(&mut self, window_id: WindowId) -> Result<()> {
         if self.window_ids().contains(&window_id) {
             self.focused_window = Some(window_id);
+            LogicalSetFocused(window_id).log(&mut self.logger);
             Ok(())
         } else {
             Err(Error::WindowNotFound)
@@ -179,6 +208,7 @@ impl Display {
 
         if self.focused_window == Some(window_id) {
             self.focused_window = self.window_ids().iter().next().copied();
+            LogicalSetFocused(window_id).log(&mut self.logger);
         }
 
         Ok(removed)
@@ -208,8 +238,11 @@ impl Display {
         };
 
         container.add_window(window, self.config.window_padding())?;
+        LogicalAddedWindow(window.id).log(&mut self.logger);
 
         self.focused_window = Some(window.id);
+        LogicalSetFocused(window.id).log(&mut self.logger);
+
         Ok(())
     }
 
@@ -218,6 +251,7 @@ impl Display {
     pub fn resize_focused_window(&mut self, direction: Direction) -> Result<()> {
         if let Some(focused_id) = self.focused_window {
             self.resize_window_in_direction(focused_id, direction)?;
+            LogicalResizeWindow(focused_id, direction).log(&mut self.logger);
         }
 
         Ok(())
@@ -227,6 +261,8 @@ impl Display {
     /// amount, accounting for any padding.
     pub fn resize_window_in_direction(&mut self, id: WindowId, direction: Direction) -> Result<()> {
         let padding = self.config.window_padding();
-        self.root.resize_window(id, direction, padding)
+        self.root.resize_window(id, direction, padding)?;
+        LogicalResizeWindow(id, direction).log(&mut self.logger);
+        Ok(())
     }
 }

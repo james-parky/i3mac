@@ -83,7 +83,7 @@ impl WindowManager {
             displays: Default::default(),
             floating_windows: Default::default(),
             minimised_windows: Default::default(),
-            logger: Logger::try_new("/dev/stdout", config.log_level)
+            logger: Logger::try_new("/dev/stdout", config.log_level, "WM".into())
                 .map_err(Error::CreateLogger)?,
             config,
             status_bars: Default::default(),
