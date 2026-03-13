@@ -1,10 +1,17 @@
-use crate::display::logical;
-use crate::log::{Level, Logger};
 use crate::{
-    container,
+    container::{Axis, Window},
+    display::{
+        log::Message::{
+            PhysicalAddedLogical, PhysicalAddedWindow, PhysicalAddedWindowToLogical, PhysicalNew,
+            PhysicalRemovedLogical, PhysicalRemovedWindow, PhysicalResizeFocused,
+            PhysicalSetFocused, PhysicalShiftFocus, PhysicalSplit, PhysicalSwitchActive,
+            PhysicalSwitchDisplay,
+        },
+        logical,
+    },
     error::{Error, Result},
+    log::{Level, Log, Logger},
 };
-use container::{Axis, Window};
 use core_graphics::{Bounds, Direction, DisplayId, WindowId};
 use std::collections::{HashMap, HashSet};
 
@@ -69,8 +76,10 @@ impl Display {
         let mut logical_displays = HashMap::new();
         logical_displays.insert(logical_id, logical_display);
 
-        let logger =
+        let mut logger =
             Logger::try_new("/dev/stdout", config.log_level, physical_id.to_string()).unwrap();
+
+        PhysicalNew.log(&mut logger);
         Self {
             bounds,
             logical_displays,
@@ -85,9 +94,15 @@ impl Display {
     }
 
     pub fn set_focused_window(&mut self, window_id: WindowId) {
-        if let Some(lid) = self.logical_displays.get_mut(&self.active_logical_id) {
-            lid.set_focused_window(window_id);
+        for ld in self.logical_displays.values_mut() {
+            if ld.window_ids().contains(&window_id) {
+                ld.set_focused_window(window_id).unwrap();
+                PhysicalSetFocused(window_id).log(&mut self.logger);
+                return;
+            }
         }
+
+        // TODO: return some error or panic
     }
 
     pub fn active_window_bounds(&self) -> HashMap<WindowId, Bounds> {
@@ -124,7 +139,10 @@ impl Display {
         self.logical_displays
             .get_mut(&self.active_logical_id)
             .unwrap()
-            .add_window(window)
+            .add_window(window)?;
+
+        PhysicalAddedWindow(window.id).log(&mut self.logger);
+        Ok(())
     }
 
     pub fn active_logical_id(&self) -> logical::Id {
@@ -139,14 +157,21 @@ impl Display {
             .values_mut()
             .find(|ld| ld.window_ids().contains(&window_id))
             .ok_or(Error::WindowNotFound)?;
-        owner.remove_window(window_id)
+
+        let ret = owner.remove_window(window_id)?;
+
+        PhysicalRemovedWindow(window_id).log(&mut self.logger);
+        Ok(ret)
     }
 
-    pub fn split(&mut self, direction: Axis) -> Result<()> {
+    pub fn split(&mut self, axis: Axis) -> Result<()> {
         self.logical_displays
             .get_mut(&self.active_logical_id)
             .unwrap()
-            .split(direction)
+            .split(axis)?;
+
+        PhysicalSplit(axis).log(&mut self.logger);
+        Ok(())
     }
 
     pub fn has_logical_display(&self, id: logical::Id) -> bool {
@@ -156,15 +181,18 @@ impl Display {
     pub(super) fn create_logical_display(&mut self, id: logical::Id) {
         let ld = logical::Display::new(id, self.bounds, self.config.into());
         self.logical_displays.insert(id, ld);
+        PhysicalAddedLogical(id).log(&mut self.logger);
     }
 
     pub fn remove_logical_display(&mut self, id: logical::Id) {
         // TODO: error trying to remove last one
         self.logical_displays.remove(&id);
+        PhysicalRemovedLogical(id).log(&mut self.logger);
 
         // Crude way of getting new active LD
         if let Some(k) = self.logical_displays.keys().next() {
             self.active_logical_id = *k;
+            PhysicalSwitchActive(*k).log(&mut self.logger);
         }
     }
 
@@ -172,14 +200,20 @@ impl Display {
         self.logical_displays
             .get_mut(&id)
             .unwrap()
-            .add_window(window)
+            .add_window(window)?;
+
+        PhysicalAddedWindowToLogical(window.id, id).log(&mut self.logger);
+        Ok(())
     }
 
     pub fn resize_focused_window(&mut self, direction: Direction) -> Result<()> {
         self.logical_displays
             .get_mut(&self.active_logical_id)
             .unwrap()
-            .resize_focused_window(direction)
+            .resize_focused_window(direction)?;
+
+        PhysicalResizeFocused(direction).log(&mut self.logger);
+        Ok(())
     }
 
     pub fn active_logical_display(&self) -> Option<&logical::Display> {
@@ -204,14 +238,20 @@ impl Display {
             self.logical_displays.get(&self.active_logical_id).unwrap();
             self.active_logical_id = id;
         }
+
+        PhysicalSwitchDisplay(id).log(&mut self.logger);
     }
 
     // Delegate focus shifting to the currently active logical display.
     pub fn shift_focus(&mut self, direction: Direction) -> Result<WindowId> {
-        self.logical_displays
+        let window = self
+            .logical_displays
             .get_mut(&self.active_logical_id)
             .ok_or(Error::DisplayNotFound)?
-            .shift_focus(direction)
+            .shift_focus(direction)?;
+
+        PhysicalShiftFocus(direction, window).log(&mut self.logger);
+        Ok(window)
     }
 
     pub fn focused_window(&self) -> Option<WindowId> {
