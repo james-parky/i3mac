@@ -18,6 +18,7 @@ use std::collections::{HashMap, HashSet};
 #[derive(Debug, PartialEq, Eq, Copy, Clone, Hash, Ord, PartialOrd)]
 pub struct Id(pub usize);
 
+// TODO: Display for physical::Id has the PD prefix, but this is Debug for logical::Id.
 impl std::fmt::Display for Id {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "PD{}", self.0)

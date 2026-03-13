@@ -3,24 +3,40 @@ pub mod logical;
 pub mod physical;
 mod tests;
 
-use crate::container;
-use crate::container::Axis;
-use crate::error::Error;
-use crate::error::Result;
-use crate::log::Logger;
-use container::Window;
+use crate::display::log::Message::{
+    AddLogical, AddPhysical, AddedWindow, AddingWindow, ChoseNewLogicalId, CouldNotFitWindow,
+    FocusLogical, NoNewLogicalIds, RemovedEmptyLogical, RemovedWindow, SetActivePhysical, Split,
+    SwitchToLogical,
+};
+use crate::log::{Level, Log};
+use crate::{
+    container::{Axis, Window},
+    error::Error,
+    error::Result,
+    log::Logger,
+};
 use core_graphics::{Bounds, WindowId};
 use std::collections::{HashMap, HashSet};
-use std::io::BufRead;
+use std::io::Write;
 
-#[derive(Default)]
 pub struct Displays {
     physical_displays: HashMap<physical::Id, physical::Display>,
     active_logical_display_ids: HashMap<logical::Id, physical::Id>,
     active_physical_display_id: Option<physical::Id>,
+    logger: Logger,
 }
 
 impl Displays {
+    pub fn new() -> Self {
+        Self {
+            physical_displays: Default::default(),
+            active_logical_display_ids: Default::default(),
+            active_physical_display_id: None,
+            // TODO: get log level from a display::Config?
+            logger: Logger::try_new("/dev/stdout", Level::Trace, "DM".to_string()).unwrap(),
+        }
+    }
+
     /// Returns the ID of the physical display that manages the provided window.
     pub fn display_of_window(&self, wid: WindowId) -> Option<physical::Id> {
         self.physical_displays
@@ -45,18 +61,27 @@ impl Displays {
     pub fn focus_display(&mut self, id: logical::Id) -> Option<WindowId> {
         let pid = *self.active_logical_display_ids.get(&id).unwrap();
         self.active_physical_display_id = Some(pid);
-        self.physical_displays.get(&pid).unwrap().focused_window()
+
+        let ret = self.physical_displays.get(&pid).unwrap().focused_window();
+        // TODO: separate logs for if the display was empty or not?
+        FocusLogical(id, ret.unwrap()).log(&mut self.logger);
+
+        ret
     }
 
     pub fn split(&mut self, axis: Axis) -> Result<()> {
         self.physical_displays
             .get_mut(&self.active_physical_display_id.unwrap())
             .unwrap()
-            .split(axis)
+            .split(axis)?;
+
+        Split(axis).log(&mut self.logger);
+        Ok(())
     }
 
     pub fn set_active_physical_display(&mut self, id: physical::Id) {
         self.active_physical_display_id = Some(id);
+        SetActivePhysical(id).log(&mut self.logger);
     }
 
     pub fn physical_displays(&self) -> &HashMap<physical::Id, physical::Display> {
@@ -64,6 +89,8 @@ impl Displays {
     }
 
     pub fn switch_logical_display(&mut self, pid: physical::Id, new_lid: logical::Id) {
+        SwitchToLogical(pid, new_lid).log(&mut self.logger);
+
         let pd = self.physical_displays.get(&pid).unwrap();
 
         let old_lid = pd.active_logical_id();
@@ -79,6 +106,7 @@ impl Displays {
         if old_empty {
             pd.remove_logical_display(old_lid);
             self.active_logical_display_ids.remove(&old_lid);
+            RemovedEmptyLogical(old_lid).log(&mut self.logger);
         }
     }
 
@@ -89,17 +117,24 @@ impl Displays {
                 self.active_logical_display_ids.entry(lid)
             {
                 e.insert(pid);
+                ChoseNewLogicalId(lid).log(&mut self.logger);
                 return Some(lid);
             }
         }
 
+        NoNewLogicalIds.log(&mut self.logger);
         None
     }
 
     pub fn add_physical(&mut self, pid: physical::Id, bounds: Bounds, cfg: physical::Config) {
-        let next_logical_id = self
-            .next_logical_display_id(pid)
-            .expect("already have 10 logical displays");
+        let next_logical_id = match self.next_logical_display_id(pid) {
+            Some(x) => x,
+            None => {
+                print!("\x07");
+                std::io::stdout().flush().unwrap();
+                return;
+            }
+        };
 
         let pd = physical::Display::new(pid, next_logical_id, bounds, cfg);
 
@@ -107,6 +142,7 @@ impl Displays {
         self.active_logical_display_ids.insert(next_logical_id, pid);
 
         self.active_physical_display_id = Some(pid);
+        AddPhysical(pid, next_logical_id).log(&mut self.logger);
     }
 
     pub(crate) fn active_logical_display_id(&self) -> logical::Id {
@@ -126,6 +162,7 @@ impl Displays {
 
         self.active_logical_display_ids.insert(lid, pid);
 
+        AddLogical(pid, lid).log(&mut self.logger);
         lid
     }
 
@@ -137,6 +174,7 @@ impl Displays {
         let initial_lid = self.active_logical_display_id();
         let mut lid = initial_lid;
         let pid = *self.active_logical_display_ids.get(&lid).unwrap();
+        AddingWindow(window.id, pid).log(&mut self.logger);
 
         loop {
             match self
@@ -146,6 +184,7 @@ impl Displays {
                 .add_window_to_logical(window, lid)
             {
                 Err(Error::CannotFitWindow) => {
+                    CouldNotFitWindow(window.id, lid).log(&mut self.logger);
                     lid = self.next_logical_display_id(pid).unwrap();
                     self.physical_displays
                         .get_mut(&pid)
@@ -160,6 +199,7 @@ impl Displays {
             }
         }
 
+        AddedWindow(window.id, lid).log(&mut self.logger);
         if lid == initial_lid {
             Ok(AddWindowResult::Active(lid))
         } else {
@@ -195,14 +235,22 @@ impl Displays {
         self.physical_displays
             .get_mut(&pid)
             .unwrap()
-            .add_window_to_logical(window, lid)
+            .add_window_to_logical(window, lid)?;
+
+        AddedWindow(window.id, lid).log(&mut self.logger);
+        Ok(())
     }
 
     pub fn remove_window(&mut self, pid: physical::Id, wid: WindowId) -> Result<Option<WindowId>> {
-        self.physical_displays
+        let ret = self
+            .physical_displays
             .get_mut(&pid)
             .unwrap()
-            .remove_window(wid)
+            .remove_window(wid)?;
+
+        // TODO different logs based on Option<> value?
+        RemovedWindow(wid, pid).log(&mut self.logger);
+        Ok(ret)
     }
 
     pub fn logical_ids(&self, pid: physical::Id) -> HashSet<logical::Id> {
@@ -227,6 +275,7 @@ pub enum AddWindowResult {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::log::Level;
 
     fn pid(id: usize) -> physical::Id {
         physical::Id(id)
@@ -242,6 +291,17 @@ mod test {
             width: 10.0,
             x: 0.0,
             y: 0.0,
+        }
+    }
+
+    impl Default for Displays {
+        fn default() -> Self {
+            Self {
+                physical_displays: Default::default(),
+                active_logical_display_ids: Default::default(),
+                active_physical_display_id: None,
+                logger: Logger::try_new("/dev/null", Level::Error, "".to_string()).unwrap(),
+            }
         }
     }
 

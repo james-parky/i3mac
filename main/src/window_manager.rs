@@ -80,7 +80,7 @@ impl WindowManager {
     pub fn new(config: Config) -> Result<Self> {
         let mut wm = Self {
             windows: Default::default(),
-            displays: Default::default(),
+            displays: Displays::new(),
             floating_windows: Default::default(),
             minimised_windows: Default::default(),
             logger: Logger::try_new("/dev/stdout", config.log_level, "WM".into())

@@ -1,3 +1,4 @@
+use crate::display::physical;
 use crate::{
     container::Axis,
     display::logical,
@@ -27,6 +28,20 @@ pub enum Message {
     PhysicalSwitchActive(logical::Id),
     PhysicalResizeFocused(Direction),
     PhysicalSwitchDisplay(logical::Id),
+
+    FocusLogical(logical::Id, WindowId),
+    Split(Axis),
+    SetActivePhysical(physical::Id),
+    SwitchToLogical(physical::Id, logical::Id),
+    RemovedEmptyLogical(logical::Id),
+    ChoseNewLogicalId(logical::Id),
+    NoNewLogicalIds,
+    AddPhysical(physical::Id, logical::Id),
+    AddLogical(physical::Id, logical::Id),
+    AddingWindow(WindowId, physical::Id),
+    CouldNotFitWindow(WindowId, logical::Id),
+    AddedWindow(WindowId, logical::Id),
+    RemovedWindow(WindowId, physical::Id),
 }
 
 impl Log for Message {
@@ -55,6 +70,20 @@ impl Log for Message {
             PhysicalSwitchActive(_) => Level::Trace,
             PhysicalResizeFocused(_) => Level::Trace,
             PhysicalSwitchDisplay(_) => Level::Trace,
+
+            FocusLogical(_, _) => Level::Info,
+            Split(_) => Level::Info,
+            SetActivePhysical(_) => Level::Info,
+            SwitchToLogical(_, _) => Level::Info,
+            RemovedEmptyLogical(_) => Level::Info,
+            ChoseNewLogicalId(_) => Level::Trace,
+            NoNewLogicalIds => Level::Trace,
+            AddPhysical(_, _) => Level::Info,
+            AddLogical(_, _) => Level::Info,
+            AddingWindow(_, _) => Level::Info,
+            CouldNotFitWindow(_, _) => Level::Info,
+            AddedWindow(_, _) => Level::Info,
+            RemovedWindow(_, _) => Level::Info,
         }
     }
 
@@ -97,6 +126,28 @@ impl Log for Message {
             PhysicalSwitchActive(active) => format!("switching active display {active}"),
             PhysicalResizeFocused(direction) => format!("resized focused window {direction}"),
             PhysicalSwitchDisplay(display) => format!("switching to {display:?}"),
+
+            FocusLogical(logical, window) => {
+                format!("focus window {window} on logical display {logical:?}")
+            }
+            Split(axis) => format!("split focused container along {axis:?}"),
+            SetActivePhysical(physical) => format!("set display {physical} active"),
+            SwitchToLogical(physical, logical) => format!("switching to {logical:?} on {physical}"),
+            RemovedEmptyLogical(logical) => format!("removed empty logical display {logical:?}"),
+            ChoseNewLogicalId(logical) => format!("new logical display will be {logical:?}"),
+            NoNewLogicalIds => "no new logical IDs left to create display".to_string(),
+            AddPhysical(physical, logical) => {
+                format!("added physical display {physical} with {logical:?}")
+            }
+            AddLogical(physical, logical) => {
+                format!("added logical display {logical:?} to {physical}")
+            }
+            AddingWindow(window, physical) => format!("adding window {window} to {physical}"),
+            CouldNotFitWindow(window, logical) => {
+                format!("could not fit window {window} on {logical:?}")
+            }
+            AddedWindow(window, logical) => format!("added window {window} to {logical:?}"),
+            RemovedWindow(window, physical) => format!("removed window {window} from {physical}"),
         }
     }
 }
