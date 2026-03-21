@@ -1,4 +1,4 @@
-use crate::log::Level;
+use crate::log::{Level, Prefix};
 use crate::{
     container::{self, Axis, Container, Empty},
     display::log::Message::{
@@ -35,8 +35,8 @@ impl From<usize> for Id {
 }
 
 impl Id {
-    fn as_log_prefix(&self) -> String {
-        format!("{self:?}")
+    fn as_log_prefix(&self) -> Prefix {
+        Prefix::new(format!("LD{}", self.0))
     }
 }
 

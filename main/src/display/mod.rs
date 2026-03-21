@@ -8,7 +8,7 @@ use crate::display::log::Message::{
     FocusLogical, NoNewLogicalIds, RemovedEmptyLogical, RemovedWindow, SetActivePhysical, Split,
     SwitchToLogical,
 };
-use crate::log::{Level, Log};
+use crate::log::{Level, Log, Prefix};
 use crate::{
     container::{Axis, Window},
     error::Error,
@@ -33,7 +33,7 @@ impl Displays {
             active_logical_display_ids: Default::default(),
             active_physical_display_id: None,
             // TODO: get log level from a display::Config?
-            logger: Logger::try_new("/dev/stdout", Level::Trace, "DM".to_string()).unwrap(),
+            logger: Logger::try_new("/dev/stdout", Level::Trace, Prefix::DISPLAY_MANAGER).unwrap(),
         }
     }
 
@@ -275,7 +275,7 @@ pub enum AddWindowResult {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::log::Level;
+    use crate::log::{Level, Prefix};
 
     fn pid(id: usize) -> physical::Id {
         physical::Id(id)
@@ -300,7 +300,8 @@ mod test {
                 physical_displays: Default::default(),
                 active_logical_display_ids: Default::default(),
                 active_physical_display_id: None,
-                logger: Logger::try_new("/dev/null", Level::Error, "".to_string()).unwrap(),
+                logger: Logger::try_new("/dev/null", Level::Error, Prefix::DISPLAY_MANAGER)
+                    .unwrap(),
             }
         }
     }

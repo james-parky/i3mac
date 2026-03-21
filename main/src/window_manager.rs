@@ -1,3 +1,4 @@
+use crate::log::Prefix;
 use crate::{
     config::Config,
     container,
@@ -83,7 +84,7 @@ impl WindowManager {
             displays: Displays::new(),
             floating_windows: Default::default(),
             minimised_windows: Default::default(),
-            logger: Logger::try_new("/dev/stdout", config.log_level, "WM".into())
+            logger: Logger::try_new("/dev/stdout", config.log_level, Prefix::WINDOW_MANAGER)
                 .map_err(Error::CreateLogger)?,
             config,
             status_bars: Default::default(),

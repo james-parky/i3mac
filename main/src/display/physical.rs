@@ -1,3 +1,4 @@
+use crate::log::Prefix;
 use crate::{
     container::{Axis, Window},
     display::{
@@ -34,6 +35,12 @@ impl From<DisplayId> for Id {
 impl From<Id> for DisplayId {
     fn from(id: Id) -> Self {
         DisplayId::from(id.0)
+    }
+}
+
+impl Id {
+    fn as_log_prefix(&self) -> Prefix {
+        Prefix::new(format!("PD{} ", self.0))
     }
 }
 
@@ -78,7 +85,7 @@ impl Display {
         logical_displays.insert(logical_id, logical_display);
 
         let mut logger =
-            Logger::try_new("/dev/stdout", config.log_level, physical_id.to_string()).unwrap();
+            Logger::try_new("/dev/stdout", config.log_level, physical_id.as_log_prefix()).unwrap();
 
         PhysicalNew.log(&mut logger);
         Self {

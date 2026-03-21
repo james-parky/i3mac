@@ -1,8 +1,9 @@
-use crate::container::Axis;
-use crate::display;
+use crate::{container::Axis, display};
 use core_graphics::{Direction, DisplayId, KeyCommand, WindowId};
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::{
+    convert::Into,
     fmt::Display,
     fs::{File, OpenOptions},
     io::Write,
@@ -55,11 +56,27 @@ pub trait Log {
 pub struct Logger {
     file: File,
     level: Level,
-    prefix: String,
+    prefix: Prefix,
+}
+
+#[derive(Debug)]
+pub struct Prefix(Cow<'static, str>);
+
+impl Prefix {
+    const fn fixed(s: &'static str) -> Self {
+        Self(Cow::Borrowed(s))
+    }
+
+    pub fn new(s: String) -> Self {
+        Self(Cow::Owned(s))
+    }
+
+    pub const WINDOW_MANAGER: Self = Self::fixed("WM");
+    pub const DISPLAY_MANAGER: Self = Self::fixed("DM");
 }
 
 impl Logger {
-    pub fn try_new<P: AsRef<Path>>(path: P, level: Level, prefix: String) -> std::io::Result<Self> {
+    pub fn try_new<P: AsRef<Path>>(path: P, level: Level, prefix: Prefix) -> std::io::Result<Self> {
         let file = OpenOptions::new().create(true).append(true).open(path)?;
         Ok(Self {
             file,
@@ -77,7 +94,7 @@ impl Logger {
                     current_time(),
                     std::process::id(),
                     level,
-                    self.prefix,
+                    self.prefix.0,
                     message
                 )
                 .as_bytes(),
