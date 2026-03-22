@@ -7,6 +7,16 @@ pub(crate) struct Window {
     cg: core_graphics::Window,
     ax: ax_ui::Window,
     bounds: Bounds,
+    /// If true, the window been toggled floating by the user. These windows are
+    /// kept track of, but not managed, and therefore not included in container
+    /// bounds calculations.
+    is_floating: bool,
+    /// If true, the window been minimised by the window manager but is still
+    /// under management. When a window is minimised, either through
+    /// user interaction, or the AXUI API, Core Graphics stops reporting its
+    /// window ID. This causes issues with the minimisation/un-minimisation
+    /// process performed during logical display focus shift; so keep track.
+    is_minimised: bool,
 }
 
 impl Hash for Window {
@@ -36,6 +46,8 @@ impl TryFrom<core_graphics::Window> for Window {
             bounds: value.bounds().clone(),
             cg: value,
             ax: ax_window,
+            is_floating: false,
+            is_minimised: false,
         })
     }
 }
@@ -50,6 +62,32 @@ impl Window {
 
     pub(crate) fn cg(&self) -> &core_graphics::Window {
         &self.cg
+    }
+
+    pub(crate) fn is_floating(&self) -> bool {
+        self.is_floating
+    }
+
+    pub(crate) fn is_minimised(&self) -> bool {
+        self.is_minimised
+    }
+
+    pub(crate) fn set_floating(&mut self, is_floating: bool) {
+        self.is_floating = is_floating;
+    }
+
+    pub(crate) fn unminimise(&mut self) -> Result<()> {
+        self.ax.unminimise().map_err(Error::AxUi)?;
+        self.is_minimised = false;
+
+        Ok(())
+    }
+
+    pub(crate) fn minimise(&mut self) -> Result<()> {
+        self.ax.minimise().map_err(Error::AxUi)?;
+        self.is_minimised = true;
+
+        Ok(())
     }
 
     pub(crate) fn init(&mut self) -> Result<()> {

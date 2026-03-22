@@ -48,16 +48,6 @@ pub struct WindowManager {
     windows: HashMap<WindowId, Window>,
     /// The delegate display manager.
     displays: Displays,
-    /// A set of window IDs that have been toggled floating by the user. These
-    /// windows are kept track of, but not managed, and therefore not included
-    /// in container bounds calculations.
-    floating_windows: HashSet<WindowId>,
-    /// A set of window IDs that have been minimised by the window manager but
-    /// are still under management. When a window is minimised, either through
-    /// user interaction, or the AXUI API, Core Graphics stops reporting its
-    /// window ID. This causes issues with the minimisation/un-minimisation
-    /// process performed during logical display focus shift; so keep track.
-    minimised_windows: HashSet<WindowId>,
     /// A logger to that produces logs prefixed with "WM".
     logger: Logger,
     /// Config for the window manager.
@@ -82,8 +72,6 @@ impl WindowManager {
         let mut wm = Self {
             windows: Default::default(),
             displays: Displays::new(),
-            floating_windows: Default::default(),
-            minimised_windows: Default::default(),
             logger: Logger::try_new("/dev/stdout", config.log_level, Prefix::WINDOW_MANAGER)
                 .map_err(Error::CreateLogger)?,
             config,
@@ -248,7 +236,7 @@ impl WindowManager {
                 display_id,
                 window_id,
             } => {
-                if self.minimised_windows.contains(&window_id) {
+                if self.windows.get(&window_id).unwrap().is_minimised() {
                     // MacOS registers a Core Graphics window removed event when
                     // the application is minimised. If it is a window we
                     // intentionally minimised, don't actually remove it.
@@ -327,7 +315,7 @@ impl WindowManager {
     }
 
     fn handle_window_removed(&mut self, display_id: DisplayId, window_id: WindowId) -> Result<()> {
-        if self.floating_windows.contains(&window_id) {
+        if self.windows.get(&window_id).unwrap().is_floating() {
             return Ok(());
         }
 
@@ -401,8 +389,11 @@ impl WindowManager {
     fn handle_toggle_floating(&mut self) -> Result<()> {
         let focused_window = ax_ui::Window::try_get_focused().map_err(Error::AxUi)?;
 
-        if self.floating_windows.contains(&focused_window) {
-            self.floating_windows.remove(&focused_window);
+        if self.windows.get(&focused_window).unwrap().is_floating() {
+            self.windows
+                .get_mut(&focused_window)
+                .unwrap()
+                .set_floating(false);
 
             let cw = container::Window {
                 id: focused_window,
@@ -418,7 +409,10 @@ impl WindowManager {
             let pid = self.displays.display_of_window(focused_window).unwrap();
 
             self.displays.remove_window(pid, focused_window)?;
-            self.floating_windows.insert(focused_window);
+            self.windows
+                .get_mut(&focused_window)
+                .unwrap()
+                .set_floating(true);
             self.apply_layout()?;
 
             WindowMadeFloating(focused_window).log(&mut self.logger);
@@ -522,13 +516,7 @@ impl WindowManager {
     /// provided ID.
     fn try_minimise_logical(&mut self, id: logical::Id) -> Result<()> {
         for w in self.displays.get_logical(id).unwrap().window_ids() {
-            self.minimised_windows.insert(w);
-            self.windows
-                .get_mut(&w)
-                .unwrap()
-                .ax()
-                .minimise()
-                .map_err(Error::AxUi)?;
+            self.windows.get_mut(&w).unwrap().minimise()?;
         }
 
         Ok(())
@@ -538,13 +526,7 @@ impl WindowManager {
     /// provided ID.
     fn try_unminimise_logical(&mut self, id: logical::Id) -> Result<()> {
         for w in self.displays.get_logical(id).unwrap().window_ids() {
-            self.minimised_windows.insert(w);
-            self.windows
-                .get_mut(&w)
-                .unwrap()
-                .ax()
-                .unminimise()
-                .map_err(Error::AxUi)?;
+            self.windows.get_mut(&w).unwrap().unminimise()?;
         }
 
         Ok(())
