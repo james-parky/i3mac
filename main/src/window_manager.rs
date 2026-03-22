@@ -596,14 +596,8 @@ impl WindowManager {
 
         self.displays.switch_logical_display(target_pid, new_lid);
 
-        if same_pd
-            && self
-                .displays
-                .get_logical(current_lid)
-                .unwrap()
-                .window_ids()
-                .is_empty()
-        {
+        // TODO: is this correct?
+        if same_pd && self.displays.get_logical(current_lid).is_none() {
             // Empty LD will already have been removed by DM
             self.status_bars
                 .get_mut(&current_pid.into())

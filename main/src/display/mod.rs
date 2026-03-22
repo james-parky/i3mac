@@ -1,6 +1,7 @@
 mod log;
 pub mod logical;
 pub mod physical;
+mod registry;
 mod tests;
 
 use crate::display::log::Message::{
@@ -8,6 +9,7 @@ use crate::display::log::Message::{
     FocusLogical, NoNewLogicalIds, RemovedEmptyLogical, RemovedWindow, SetActivePhysical, Split,
     SwitchToLogical,
 };
+use crate::display::registry::Registry;
 use crate::log::{Level, Log, Prefix};
 use crate::{
     container::{Axis, Window},
@@ -21,7 +23,7 @@ use std::io::Write;
 
 pub struct Displays {
     physical_displays: HashMap<physical::Id, physical::Display>,
-    active_logical_display_ids: HashMap<logical::Id, physical::Id>,
+    registry: Registry,
     active_physical_display_id: Option<physical::Id>,
     logger: Logger,
 }
@@ -30,7 +32,7 @@ impl Displays {
     pub fn new() -> Self {
         Self {
             physical_displays: Default::default(),
-            active_logical_display_ids: Default::default(),
+            registry: Registry::new(),
             active_physical_display_id: None,
             // TODO: get log level from a display::Config?
             logger: Logger::try_new("/dev/stdout", Level::Trace, Prefix::DISPLAY_MANAGER).unwrap(),
@@ -48,7 +50,7 @@ impl Displays {
     /// Returns the ID of the physical display that manages the provided logical
     /// display.
     pub fn logical_id_owner(&self, id: logical::Id) -> Option<physical::Id> {
-        self.active_logical_display_ids.get(&id).copied()
+        self.registry.owner_of(id)
     }
 
     /// Returns a reference to the logical display corresponding to the provided
@@ -59,12 +61,12 @@ impl Displays {
     }
 
     pub fn focus_display(&mut self, id: logical::Id) -> Option<WindowId> {
-        let pid = *self.active_logical_display_ids.get(&id).unwrap();
+        let pid = self.registry.owner_of(id)?;
         self.active_physical_display_id = Some(pid);
 
         let ret = self.physical_displays.get(&pid).unwrap().focused_window();
         // TODO: separate logs for if the display was empty or not?
-        FocusLogical(id, ret.unwrap()).log(&mut self.logger);
+        // FocusLogical(id, ret.unwrap()).log(&mut self.logger);
 
         ret
     }
@@ -105,44 +107,25 @@ impl Displays {
 
         if old_empty {
             pd.remove_logical_display(old_lid);
-            self.active_logical_display_ids.remove(&old_lid);
+            self.registry.deregister(old_lid);
             RemovedEmptyLogical(old_lid).log(&mut self.logger);
         }
     }
 
-    pub fn next_logical_display_id(&mut self, pid: physical::Id) -> Option<logical::Id> {
-        for id in 0..=9 {
-            let lid = logical::Id(id);
-            if let std::collections::hash_map::Entry::Vacant(e) =
-                self.active_logical_display_ids.entry(lid)
-            {
-                e.insert(pid);
-                ChoseNewLogicalId(lid).log(&mut self.logger);
-                return Some(lid);
-            }
-        }
-
-        NoNewLogicalIds.log(&mut self.logger);
-        None
-    }
-
     pub fn add_physical(&mut self, pid: physical::Id, bounds: Bounds, cfg: physical::Config) {
-        let next_logical_id = match self.next_logical_display_id(pid) {
+        let lid = match self.registry.next_available_logical() {
             Some(x) => x,
-            None => {
-                print!("\x07");
-                std::io::stdout().flush().unwrap();
-                return;
-            }
+            // TODO: error
+            None => return,
         };
 
-        let pd = physical::Display::new(pid, next_logical_id, bounds, cfg);
+        let pd = physical::Display::new(pid, lid, bounds, cfg);
 
         self.physical_displays.insert(pid, pd);
-        self.active_logical_display_ids.insert(next_logical_id, pid);
+        self.registry.register(lid, pid);
 
         self.active_physical_display_id = Some(pid);
-        AddPhysical(pid, next_logical_id).log(&mut self.logger);
+        AddPhysical(pid, lid).log(&mut self.logger);
     }
 
     pub(crate) fn active_logical_display_id(&self) -> logical::Id {
@@ -152,18 +135,25 @@ impl Displays {
             .active_logical_id()
     }
 
-    pub fn create_logical_display(&mut self, pid: physical::Id, lid: logical::Id) -> logical::Id {
-        assert!(!self.active_logical_display_ids.contains_key(&lid));
+    pub fn create_logical_display(
+        &mut self,
+        pid: physical::Id,
+        lid: logical::Id,
+    ) -> Result<logical::Id> {
+        // TODO: is it fine to just require this being true from the caller?
+        if self.registry.exists(lid) {
+            return Err(Error::LogicalAlreadyExists(lid));
+        }
 
         self.physical_displays
             .get_mut(&pid)
             .unwrap()
             .create_logical_display(lid);
 
-        self.active_logical_display_ids.insert(lid, pid);
+        self.registry.register(lid, pid);
 
         AddLogical(pid, lid).log(&mut self.logger);
-        lid
+        Ok(lid)
     }
 
     pub fn physical_display_mut(&mut self, pid: physical::Id) -> Option<&mut physical::Display> {
@@ -173,7 +163,7 @@ impl Displays {
     pub fn add_window(&mut self, window: Window) -> Result<AddWindowResult> {
         let initial_lid = self.active_logical_display_id();
         let mut lid = initial_lid;
-        let pid = *self.active_logical_display_ids.get(&lid).unwrap();
+        let pid = self.registry.owner_of(lid).unwrap();
         AddingWindow(window.id, pid).log(&mut self.logger);
 
         loop {
@@ -185,12 +175,12 @@ impl Displays {
             {
                 Err(Error::CannotFitWindow) => {
                     CouldNotFitWindow(window.id, lid).log(&mut self.logger);
-                    lid = self.next_logical_display_id(pid).unwrap();
+                    lid = self.registry.next_available_logical().unwrap();
                     self.physical_displays
                         .get_mut(&pid)
                         .unwrap()
                         .create_logical_display(lid);
-                    self.active_logical_display_ids.insert(lid, pid);
+                    self.registry.register(lid, pid);
                 }
                 Err(e) => {
                     return Err(e);
@@ -221,17 +211,17 @@ impl Displays {
         // If the target LD doesn't exist yet, create it on the PD that owns the
         // current active LD. Do NOT use active_physical_display_id directly —
         // it can be stale if the window being moved was on a different PD.
-        if !self.active_logical_display_ids.contains_key(&lid) {
+        if !self.registry.exists(lid) {
             let pid = self
                 .physical_displays
                 .iter()
                 .find(|(_, pd)| pd.has_logical_display(self.active_logical_display_id()))
                 .map(|(pid, _)| *pid)
                 .unwrap(); // active LD always has an owner
-            self.create_logical_display(pid, lid);
+            self.create_logical_display(pid, lid)?;
         }
 
-        let pid = *self.active_logical_display_ids.get(&lid).unwrap();
+        let pid = self.registry.owner_of(lid).unwrap();
         self.physical_displays
             .get_mut(&pid)
             .unwrap()
@@ -254,10 +244,8 @@ impl Displays {
     }
 
     pub fn logical_ids(&self, pid: physical::Id) -> HashSet<logical::Id> {
-        self.active_logical_display_ids
-            .iter()
-            .filter_map(|(l, p)| if *p == pid { Some(*l) } else { None })
-            .collect()
+        // TODO: return Iterator<Item = logical::Id> here too?
+        self.registry.logicals(pid).collect()
     }
 
     pub fn active_physical_display_mut(&mut self) -> &mut physical::Display {
@@ -298,7 +286,7 @@ mod test {
         fn default() -> Self {
             Self {
                 physical_displays: Default::default(),
-                active_logical_display_ids: Default::default(),
+                registry: Registry::new(),
                 active_physical_display_id: None,
                 logger: Logger::try_new("/dev/null", Level::Error, Prefix::DISPLAY_MANAGER)
                     .unwrap(),

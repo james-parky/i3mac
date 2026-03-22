@@ -1,4 +1,5 @@
 use crate::display;
+use crate::display::logical;
 use core_graphics::DisplayId;
 use std::io;
 
@@ -19,6 +20,7 @@ pub enum Error {
     CannotFitWindow,
     PhysicalDoesNotContainLogical(DisplayId, display::physical::Id),
     CreateLogger(io::Error),
+    LogicalAlreadyExists(logical::Id),
 }
 
 pub(crate) type Result<T> = std::result::Result<T, Error>;
