@@ -1,3 +1,4 @@
+use crate::container::RemoveResult;
 use crate::{
     container::{Axis, Container, Window, leaf::Leaf, spread_bounds_along_axis},
     error::{Error, Result},
@@ -123,58 +124,55 @@ impl Split {
     }
 
     pub fn remove_window(&mut self, id: WindowId, padding: f64) -> Result<RemoveResult> {
-        if self
+        if let Some(pos) = self
             .children
             .iter()
-            .find(|c| matches!(c, Container::Leaf(leaf) if leaf.window.id == id))
-            .is_some()
+            .position(|c| matches!(c, Container::Leaf(leaf) if leaf.window.id == id))
         {
-            self.children.retain(|c| !matches!(c, Container::Empty(_)));
+            self.children.remove(pos);
 
             if self.children.is_empty() {
                 return Ok(RemoveResult::BecomeEmpty);
-            } else {
-                let new_bounds =
-                    spread_bounds_along_axis(self.bounds, self.axis, self.children.len(), padding);
-                for (child, b) in self.children.iter_mut().zip(new_bounds) {
-                    child.resize(b)?;
-                }
+            }
+
+            let new_bounds =
+                spread_bounds_along_axis(self.bounds, self.axis, self.children.len(), padding);
+            for (child, b) in self.children.iter_mut().zip(new_bounds) {
+                child.resize(b)?;
             }
 
             return Ok(RemoveResult::Removed);
         }
 
-        let mut found_id: Option<WindowId> = None;
         for child in self.children.iter_mut() {
-            if let Some(id) = child.remove_window(id, padding)? {
-                found_id = Some(id);
-                break;
-            }
-        }
+            match child.remove_window(id, padding)? {
+                RemoveResult::NotFound => continue,
+                RemoveResult::Removed => {
+                    return Ok(RemoveResult::Removed);
+                }
+                RemoveResult::BecomeEmpty => {
+                    self.children.retain(|c| !matches!(c, Container::Empty(_)));
 
-        if found_id.is_some() {
-            // Drop now empty kids
-            let m = self.children.len();
-            self.children
-                .retain(|c| !matches!(c, Container::Empty { .. }));
+                    if self.children.is_empty() {
+                        return Ok(RemoveResult::BecomeEmpty);
+                    }
 
-            let saved_bounds = self.bounds;
-            let saved_axis = self.axis;
-            let n = self.children.len();
+                    let new_bounds = spread_bounds_along_axis(
+                        self.bounds,
+                        self.axis,
+                        self.children.len(),
+                        padding,
+                    );
+                    for (child, b) in self.children.iter_mut().zip(new_bounds) {
+                        child.resize(b)?;
+                    }
 
-            if n == 0 {
-                return Ok(RemoveResult::BecomeEmpty);
-            } else if n < m {
-                let new_bounds = spread_bounds_along_axis(saved_bounds, saved_axis, n, padding);
-                for (child, b) in self.children.iter_mut().zip(new_bounds) {
-                    child.resize(b)?;
+                    return Ok(RemoveResult::Removed);
                 }
             }
-
-            return Ok(RemoveResult::Removed);
         }
 
-        Ok(RemoveResult::DidntRemove)
+        Ok(RemoveResult::NotFound)
     }
 
     pub fn split(&mut self, axis: Axis) -> Result<()> {
@@ -286,10 +284,4 @@ impl Split {
         let children = window_ids.iter().map(Leaf::dummy).collect();
         Container::Split(Split::new(dummy_bounds(), axis, 0.0, children))
     }
-}
-
-pub(super) enum RemoveResult {
-    BecomeEmpty,
-    Removed,
-    DidntRemove,
 }

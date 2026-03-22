@@ -62,15 +62,19 @@ impl Config {
 }
 
 #[derive(Debug)]
-pub(crate) struct Display {
-    id: Id,
+pub(crate) struct Display<S> {
     root: Container,
-    focused_window: Option<WindowId>,
     config: Config,
     logger: Logger,
+    state: S,
 }
 
-impl Display {
+pub struct NoWindows;
+pub struct SomeWindows {
+    focused_window: WindowId,
+}
+
+impl Display<NoWindows> {
     /// Create a new `Display` with the provided `Bounds` and `Config`.
     ///
     /// The height of a `Display` does **not** include the screen space reserved
@@ -95,17 +99,38 @@ impl Display {
 
         LogicalNew.log(&mut logger);
         Display {
-            id,
             root: Container::Empty(Empty::new(bounds)),
-            focused_window: None,
             config,
             logger,
+            state: NoWindows,
         }
     }
 
+    pub fn add_window(self, window: container::Window) -> Result<Display<SomeWindows>> {
+        let mut container = self.root;
+        container.add_window(window, self.config.window_padding())?;
+
+        let ret = Display::<SomeWindows> {
+            root: container,
+            config: self.config,
+            logger: self.logger,
+            state: SomeWindows {
+                focused_window: window.id,
+            },
+        };
+
+        Ok(ret)
+    }
+
+    pub fn split(&mut self, axis: Axis) -> Result<()> {
+        self.root.split(axis)
+    }
+}
+
+impl Display<SomeWindows> {
     /// Return's the logical display's currently focussed window's ID.
-    pub fn focused_window(&self) -> Option<WindowId> {
-        self.focused_window
+    pub fn focused_window(&self) -> WindowId {
+        self.state.focused_window
     }
 
     /// Shift focus within the logical display's managed windows in some
@@ -137,12 +162,9 @@ impl Display {
             windows
         };
 
-        // TODO: should really return an error here for both unwraps since the
-        //       focused window SHOULD exist
-        let current_focused = self.focused_window.unwrap_or(windows[0].0);
         let current_focussed_index = windows
             .iter()
-            .position(|(id, _)| *id == current_focused)
+            .position(|(id, _)| *id == self.state.focused_window)
             .unwrap_or(0);
 
         let next_focus = match (current_focussed_index, direction) {
@@ -151,7 +173,7 @@ impl Display {
             _ => windows[current_focussed_index].0,
         };
 
-        self.focused_window = Some(next_focus);
+        self.state.focused_window = next_focus;
 
         LogicalShiftFocus(direction, next_focus).log(&mut self.logger);
         Ok(next_focus)
@@ -170,23 +192,16 @@ impl Display {
 
     /// Split the logical display's focused window's container along the
     /// provided `axis`.
-    ///
-    /// If there is no focussed window, change the current split direction of
-    /// the logical display's `root` container.
     pub fn split(&mut self, axis: Axis) -> Result<()> {
-        let container = if let Some(id) = self.focused_window {
-            let c = self
-                .root
-                .parent_leaf_of_window_mut(id)
-                .ok_or(Error::CannotFindParentLeaf)?;
+        // Safety: If we are a Display::<SomeWindows> then there is guaranteed
+        //         to be a focused window and that windows is guaranteed to have
+        //         a parent.
+        let container = self
+            .root
+            .parent_leaf_of_window_mut(self.state.focused_window)
+            .unwrap();
 
-            LogicalSplitContainer(axis, id).log(&mut self.logger);
-            c
-        } else {
-            LogicalSplitRoot(axis).log(&mut self.logger);
-            &mut self.root
-        };
-
+        LogicalSplitContainer(axis, self.state.focused_window).log(&mut self.logger);
         container.split(axis)
     }
 
@@ -194,7 +209,7 @@ impl Display {
     /// error if the logical display does not manage the window.
     pub fn set_focused_window(&mut self, window_id: WindowId) -> Result<()> {
         if self.window_ids().contains(&window_id) {
-            self.focused_window = Some(window_id);
+            self.state.focused_window = window_id;
             LogicalSetFocused(window_id).log(&mut self.logger);
             Ok(())
         } else {
@@ -202,16 +217,37 @@ impl Display {
         }
     }
 
-    pub fn remove_window(&mut self, window_id: WindowId) -> Result<Option<WindowId>> {
-        let padding = self.config.window_padding();
-        let removed = self.root.remove_window(window_id, padding)?;
+    pub fn remove_window(self, window_id: WindowId) -> Result<RemoveResult> {
+        let mut root = self.root;
 
-        if self.focused_window == Some(window_id) {
-            self.focused_window = self.window_ids().iter().next().copied();
-            LogicalSetFocused(window_id).log(&mut self.logger);
+        match root.remove_window(window_id, self.config.window_padding())? {
+            container::RemoveResult::NotFound => Err(Error::WindowNotFound),
+            container::RemoveResult::BecomeEmpty => Ok(RemoveResult::NowEmpty(Display {
+                root,
+                config: self.config,
+                logger: self.logger,
+                state: NoWindows,
+            })),
+            container::RemoveResult::Removed => {
+                let new_focused = if self.state.focused_window == window_id {
+                    // Safety: since the remove result was not BecomeEmpty, we
+                    //         know there is at least one more window to become
+                    //         the newly focused one.
+                    root.window_ids().iter().next().copied().unwrap()
+                } else {
+                    self.state.focused_window
+                };
+
+                Ok(RemoveResult::StillHasWindows(Display {
+                    root,
+                    config: self.config,
+                    logger: self.logger,
+                    state: SomeWindows {
+                        focused_window: new_focused,
+                    },
+                }))
+            }
         }
-
-        Ok(removed)
     }
 
     /// Add a window to the logical display, accounting for its configured
@@ -227,20 +263,18 @@ impl Display {
     // If there is no window:
     //  - Add new window as a child of the root (horizontal split)
     pub fn add_window(&mut self, window: container::Window) -> Result<()> {
-        // TODO: should probably error here if there is a focused window but
-        //       there is no parent for it
-        let container = match self.focused_window {
-            None => &mut self.root,
-            Some(id) => match self.root.get_parent_of_window_mut(id) {
-                Some(c) => c,
-                None => &mut self.root,
-            },
-        };
+        // Safety: If we are a Display::<SomeWindows> then there is guaranteed
+        //         to be a focused window and that windows is guaranteed to have
+        //         a parent.
+        let container = self
+            .root
+            .get_parent_of_window_mut(self.state.focused_window)
+            .unwrap();
 
         container.add_window(window, self.config.window_padding())?;
         LogicalAddedWindow(window.id).log(&mut self.logger);
 
-        self.focused_window = Some(window.id);
+        self.state.focused_window = window.id;
         LogicalSetFocused(window.id).log(&mut self.logger);
 
         Ok(())
@@ -249,10 +283,8 @@ impl Display {
     /// If there is a focussed window, resize it in `direction` by the
     /// configured amount, accounting for any padding.
     pub fn resize_focused_window(&mut self, direction: Direction) -> Result<()> {
-        if let Some(focused_id) = self.focused_window {
-            self.resize_window_in_direction(focused_id, direction)?;
-            LogicalResizeWindow(focused_id, direction).log(&mut self.logger);
-        }
+        self.resize_window_in_direction(self.state.focused_window, direction)?;
+        LogicalResizeWindow(self.state.focused_window, direction).log(&mut self.logger);
 
         Ok(())
     }
@@ -265,4 +297,9 @@ impl Display {
         LogicalResizeWindow(id, direction).log(&mut self.logger);
         Ok(())
     }
+}
+
+pub enum RemoveResult {
+    StillHasWindows(Display<SomeWindows>),
+    NowEmpty(Display<NoWindows>),
 }

@@ -9,6 +9,7 @@ use crate::display::log::Message::{
     FocusLogical, NoNewLogicalIds, RemovedEmptyLogical, RemovedWindow, SetActivePhysical, Split,
     SwitchToLogical,
 };
+use crate::display::logical::SomeWindows;
 use crate::display::registry::Registry;
 use crate::log::{Level, Log, Prefix};
 use crate::{
@@ -91,10 +92,10 @@ impl Displays<Initialised> {
 
     /// Returns a reference to the logical display corresponding to the provided
     /// logical display ID.
-    pub fn get_logical(&self, id: logical::Id) -> Option<&logical::Display> {
-        let pid = self.logical_id_owner(id)?;
-        self.physical_displays.get(&pid)?.logical(id)
-    }
+    // pub fn get_logical(&self, id: logical::Id) -> Option<&logical::Display> {
+    //     let pid = self.logical_id_owner(id)?;
+    //     self.physical_displays.get(&pid)?.logical(id)
+    // }
 
     pub fn focus_display(&mut self, id: logical::Id) -> Option<WindowId> {
         let pid = self.registry.owner_of(id)?;
@@ -129,19 +130,11 @@ impl Displays<Initialised> {
     pub fn switch_logical_display(&mut self, pid: physical::Id, new_lid: logical::Id) {
         SwitchToLogical(pid, new_lid).log(&mut self.logger);
 
-        let pd = self.physical_displays.get(&pid).unwrap();
-
-        let old_lid = pd.active_logical_id();
-
-        let old_empty = pd
-            .logical(old_lid)
-            .map(|ld| ld.window_ids().is_empty())
-            .unwrap_or(false);
-
         let pd = self.physical_displays.get_mut(&pid).unwrap();
+        let old_lid = pd.active_logical_id();
         pd.switch_to(new_lid);
 
-        if old_empty {
+        if pd.logical_is_empty(old_lid) {
             pd.remove_logical_display(old_lid);
             self.registry.deregister(old_lid);
             RemovedEmptyLogical(old_lid).log(&mut self.logger);
@@ -162,6 +155,11 @@ impl Displays<Initialised> {
 
         self.state.active_physical_display_id = pid;
         AddPhysical(pid, lid).log(&mut self.logger);
+    }
+
+    pub fn get_occupied_logical(&self, lid: logical::Id) -> Option<&logical::Display<SomeWindows>> {
+        let pid = self.registry.owner_of(lid)?;
+        self.physical_displays.get(&pid)?.occupied_logical(lid)
     }
 
     pub(crate) fn active_logical_display_id(&self) -> logical::Id {
@@ -267,16 +265,14 @@ impl Displays<Initialised> {
         Ok(())
     }
 
-    pub fn remove_window(&mut self, pid: physical::Id, wid: WindowId) -> Result<Option<WindowId>> {
-        let ret = self
-            .physical_displays
+    pub fn remove_window(&mut self, pid: physical::Id, wid: WindowId) -> Result<()> {
+        self.physical_displays
             .get_mut(&pid)
             .unwrap()
             .remove_window(wid)?;
 
-        // TODO different logs based on Option<> value?
         RemovedWindow(wid, pid).log(&mut self.logger);
-        Ok(ret)
+        Ok(())
     }
 
     pub fn logical_ids(&self, pid: physical::Id) -> HashSet<logical::Id> {

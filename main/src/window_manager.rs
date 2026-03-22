@@ -538,7 +538,15 @@ impl WindowManager {
     /// Minimise all windows on the logical display referenced by the
     /// provided ID.
     fn try_minimise_logical(&mut self, id: logical::Id) -> Result<()> {
-        for w in self.displays.get_logical(id).unwrap().window_ids() {
+        let window_ids: Vec<_> = self
+            .displays
+            .get_occupied_logical(id)
+            .ok_or(Error::DisplayNotFound)?
+            .window_ids()
+            .into_iter()
+            .collect();
+
+        for w in window_ids {
             self.windows.get_mut(&w).unwrap().minimise()?;
         }
 
@@ -548,7 +556,15 @@ impl WindowManager {
     /// Un-minimise all windows on the logical display referenced by the
     /// provided ID.
     fn try_unminimise_logical(&mut self, id: logical::Id) -> Result<()> {
-        for w in self.displays.get_logical(id).unwrap().window_ids() {
+        let window_ids: Vec<_> = self
+            .displays
+            .get_occupied_logical(id)
+            .ok_or(Error::DisplayNotFound)?
+            .window_ids()
+            .into_iter()
+            .collect();
+
+        for w in window_ids {
             self.windows.get_mut(&w).unwrap().unminimise()?;
         }
 
@@ -602,7 +618,7 @@ impl WindowManager {
         self.displays.switch_logical_display(target_pid, new_lid);
 
         // TODO: is this correct?
-        if same_pd && self.displays.get_logical(current_lid).is_none() {
+        if same_pd && self.displays.get_occupied_logical(current_lid).is_none() {
             // Empty LD will already have been removed by DM
             self.status_bars
                 .get_mut(&current_pid.into())

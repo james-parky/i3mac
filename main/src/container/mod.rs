@@ -4,10 +4,16 @@ mod split;
 
 pub use crate::container::axis::Axis;
 use crate::container::leaf::Leaf;
-use crate::container::split::{RemoveResult, Split};
+use crate::container::split::Split;
 use crate::error::{Error, Result};
 use core_graphics::{Bounds, Direction, WindowId};
 use std::collections::{HashMap, HashSet};
+
+pub enum RemoveResult {
+    BecomeEmpty,
+    Removed,
+    NotFound,
+}
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub struct Window {
@@ -137,21 +143,14 @@ impl Container {
         &mut self,
         window_id: WindowId,
         padding: f64,
-    ) -> Result<Option<WindowId>> {
+    ) -> Result<RemoveResult> {
         match self {
             Self::Leaf(leaf) if leaf.window.id == window_id => {
                 *self = Self::Empty(Empty::new(leaf.bounds));
-                Ok(Some(window_id))
+                Ok(RemoveResult::BecomeEmpty)
             }
-            Self::Split(split) => match split.remove_window(window_id, padding)? {
-                RemoveResult::BecomeEmpty => {
-                    *self = Self::Empty(Empty::new(self.bounds()));
-                    Ok(Some(window_id))
-                }
-                RemoveResult::Removed => Ok(Some(window_id)),
-                RemoveResult::DidntRemove => Ok(None),
-            },
-            Self::Empty(_) | Self::Leaf(_) => Ok(None),
+            Self::Split(split) => split.remove_window(window_id, padding),
+            Self::Empty(_) | Self::Leaf(_) => Ok(RemoveResult::NotFound),
         }
     }
 
