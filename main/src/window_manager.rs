@@ -525,13 +525,11 @@ impl WindowManager {
     /// Minimise all windows on the logical display referenced by the
     /// provided ID.
     fn try_minimise_logical(&mut self, id: logical::Id) -> Result<()> {
-        let window_ids: Vec<_> = self
-            .displays
-            .get_occupied_logical(id)
-            .ok_or(Error::DisplayNotFound)?
-            .window_ids()
-            .into_iter()
-            .collect();
+        let Some(ld) = self.displays.get_occupied_logical(id) else {
+            return Ok(());
+        };
+
+        let window_ids: Vec<_> = ld.window_ids().into_iter().collect();
 
         for w in window_ids {
             self.windows.get_mut(&w).unwrap().minimise()?;
@@ -543,13 +541,11 @@ impl WindowManager {
     /// Un-minimise all windows on the logical display referenced by the
     /// provided ID.
     fn try_unminimise_logical(&mut self, id: logical::Id) -> Result<()> {
-        let window_ids: Vec<_> = self
-            .displays
-            .get_occupied_logical(id)
-            .ok_or(Error::DisplayNotFound)?
-            .window_ids()
-            .into_iter()
-            .collect();
+        let Some(ld) = self.displays.get_occupied_logical(id) else {
+            return Ok(());
+        };
+
+        let window_ids: Vec<_> = ld.window_ids().into_iter().collect();
 
         for w in window_ids {
             self.windows.get_mut(&w).unwrap().unminimise()?;

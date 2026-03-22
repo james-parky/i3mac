@@ -98,14 +98,19 @@ impl Displays<Initialised> {
     // }
 
     pub fn focus_display(&mut self, id: logical::Id) -> Option<WindowId> {
-        let pid = self.registry.owner_of(id)?;
+        if !self.registry.exists(id) {
+            let pid = self.state.active_physical_display_id;
+            self.physical_displays
+                .get_mut(&pid)
+                .unwrap()
+                .create_logical_display(id);
+            self.registry.register(id, pid);
+        }
+
+        // Safety: we just created it
+        let pid = self.registry.owner_of(id).unwrap();
         self.state.active_physical_display_id = pid;
-
-        let ret = self.physical_displays.get(&pid).unwrap().focused_window();
-        // TODO: separate logs for if the display was empty or not?
-        // FocusLogical(id, ret.unwrap()).log(&mut self.logger);
-
-        ret
+        self.physical_displays.get(&pid).unwrap().focused_window()
     }
 
     pub fn split(&mut self, axis: Axis) -> Result<()> {

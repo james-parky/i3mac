@@ -203,13 +203,11 @@ impl LogicalDisplays {
     }
 
     pub fn set_focused_window(&mut self, window_id: WindowId) -> Result<()> {
-        for ld in self.occupied.values_mut() {
-            if ld.window_ids().contains(&window_id) {
-                ld.set_focused_window(window_id)?;
-            }
-        }
-
-        Err(Error::CannotFindWindow)
+        self.occupied
+            .values_mut()
+            .find(|ld| ld.window_ids().contains(&window_id))
+            .ok_or(Error::CannotFindWindow)?
+            .set_focused_window(window_id)
     }
 
     pub fn focused_window(&self) -> Option<WindowId> {
