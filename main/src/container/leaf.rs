@@ -4,7 +4,7 @@ use core_graphics::{Bounds, WindowId};
 
 #[derive(Debug, Copy, Clone)]
 #[cfg_attr(test, derive(PartialEq))]
-pub(super) struct Leaf {
+pub(crate) struct Leaf {
     pub bounds: Bounds,
     pub padding: f64,
     pub window: Window,

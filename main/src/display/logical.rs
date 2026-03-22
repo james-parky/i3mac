@@ -1,17 +1,18 @@
-use crate::log::{Level, Prefix};
 use crate::{
-    container::{self, Axis, Container, Empty},
+    container::{self, Axis, Container, split::Split},
     display::log::Message::{
         LogicalAddedWindow, LogicalNew, LogicalResizeWindow, LogicalSetFocused, LogicalShiftFocus,
-        LogicalSplitContainer, LogicalSplitRoot,
+        LogicalSplitContainer,
     },
     error::{Error, Result},
-    log::{Log, Logger},
+    log::{Level, Log, Logger, Prefix},
     status_bar::StatusBar,
 };
 use core_graphics::{Bounds, Direction, WindowId};
-use std::collections::{HashMap, HashSet};
-use std::fmt::Debug;
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Debug,
+};
 
 #[derive(PartialEq, Eq, Copy, Clone, Hash, Ord, PartialOrd)]
 pub struct Id(pub usize);
@@ -63,15 +64,18 @@ impl Config {
 
 #[derive(Debug)]
 pub(crate) struct Display<S> {
-    root: Container,
     config: Config,
     logger: Logger,
     state: S,
 }
 
-pub struct NoWindows;
+pub struct NoWindows {
+    bounds: Bounds,
+}
+
 pub struct SomeWindows {
     focused_window: WindowId,
+    root: Container,
 }
 
 impl Display<NoWindows> {
@@ -99,31 +103,32 @@ impl Display<NoWindows> {
 
         LogicalNew.log(&mut logger);
         Display {
-            root: Container::Empty(Empty::new(bounds)),
             config,
             logger,
-            state: NoWindows,
+            state: NoWindows { bounds },
         }
     }
 
     pub fn add_window(self, window: container::Window) -> Result<Display<SomeWindows>> {
-        let mut container = self.root;
-        container.add_window(window, self.config.window_padding())?;
+        // TODO: bit cheeky creating it with no children first
+        let mut root = Container::Split(Split::new(
+            self.state.bounds,
+            Axis::default(),
+            self.config.window_padding(),
+            vec![],
+        ));
+        root.add_window(window, self.config.window_padding())?;
 
         let ret = Display::<SomeWindows> {
-            root: container,
             config: self.config,
             logger: self.logger,
             state: SomeWindows {
                 focused_window: window.id,
+                root,
             },
         };
 
         Ok(ret)
-    }
-
-    pub fn split(&mut self, axis: Axis) -> Result<()> {
-        self.root.split(axis)
     }
 }
 
@@ -182,12 +187,12 @@ impl Display<SomeWindows> {
     /// Returns a map of window ID to its bounds for all windows the logical
     /// display manages.
     pub fn window_bounds(&self) -> HashMap<WindowId, Bounds> {
-        self.root.window_bounds_by_id()
+        self.state.root.window_bounds_by_id()
     }
 
     /// Returns the set of all window IDs the logical display manages.
     pub(crate) fn window_ids(&self) -> HashSet<WindowId> {
-        self.root.window_ids()
+        self.state.root.window_ids()
     }
 
     /// Split the logical display's focused window's container along the
@@ -197,6 +202,7 @@ impl Display<SomeWindows> {
         //         to be a focused window and that windows is guaranteed to have
         //         a parent.
         let container = self
+            .state
             .root
             .parent_leaf_of_window_mut(self.state.focused_window)
             .unwrap();
@@ -218,15 +224,16 @@ impl Display<SomeWindows> {
     }
 
     pub fn remove_window(self, window_id: WindowId) -> Result<RemoveResult> {
-        let mut root = self.root;
+        let mut root = self.state.root;
 
         match root.remove_window(window_id, self.config.window_padding())? {
             container::RemoveResult::NotFound => Err(Error::WindowNotFound),
             container::RemoveResult::BecomeEmpty => Ok(RemoveResult::NowEmpty(Display {
-                root,
                 config: self.config,
                 logger: self.logger,
-                state: NoWindows,
+                state: NoWindows {
+                    bounds: root.bounds(),
+                },
             })),
             container::RemoveResult::Removed => {
                 let new_focused = if self.state.focused_window == window_id {
@@ -239,11 +246,11 @@ impl Display<SomeWindows> {
                 };
 
                 Ok(RemoveResult::StillHasWindows(Display {
-                    root,
                     config: self.config,
                     logger: self.logger,
                     state: SomeWindows {
                         focused_window: new_focused,
+                        root,
                     },
                 }))
             }
@@ -267,6 +274,7 @@ impl Display<SomeWindows> {
         //         to be a focused window and that windows is guaranteed to have
         //         a parent.
         let container = self
+            .state
             .root
             .get_parent_of_window_mut(self.state.focused_window)
             .unwrap();
@@ -293,7 +301,7 @@ impl Display<SomeWindows> {
     /// amount, accounting for any padding.
     pub fn resize_window_in_direction(&mut self, id: WindowId, direction: Direction) -> Result<()> {
         let padding = self.config.window_padding();
-        self.root.resize_window(id, direction, padding)?;
+        self.state.root.resize_window(id, direction, padding)?;
         LogicalResizeWindow(id, direction).log(&mut self.logger);
         Ok(())
     }

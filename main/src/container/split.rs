@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 
 #[derive(Debug)]
 #[cfg_attr(test, derive(PartialEq))]
-pub(super) struct Split {
+pub(crate) struct Split {
     pub bounds: Bounds,
     pub axis: Axis,
     pub padding: f64,
@@ -144,14 +144,15 @@ impl Split {
             return Ok(RemoveResult::Removed);
         }
 
-        for child in self.children.iter_mut() {
-            match child.remove_window(id, padding)? {
+        // Recursive case
+        for i in 0..self.children.len() {
+            match self.children[i].remove_window(id, padding)? {
                 RemoveResult::NotFound => continue,
                 RemoveResult::Removed => {
                     return Ok(RemoveResult::Removed);
                 }
                 RemoveResult::BecomeEmpty => {
-                    self.children.retain(|c| !matches!(c, Container::Empty(_)));
+                    self.children.remove(i);
 
                     if self.children.is_empty() {
                         return Ok(RemoveResult::BecomeEmpty);

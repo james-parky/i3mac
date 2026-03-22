@@ -1,6 +1,6 @@
 mod axis;
-mod leaf;
-mod split;
+pub(crate) mod leaf;
+pub(crate) mod split;
 
 pub use crate::container::axis::Axis;
 use crate::container::leaf::Leaf;
@@ -47,40 +47,13 @@ impl Window {
 #[derive(Debug)]
 #[cfg_attr(test, derive(PartialEq))]
 pub(super) enum Container {
-    Empty(Empty),
     Leaf(Leaf),
     Split(Split),
-}
-
-#[derive(Debug)]
-#[cfg_attr(test, derive(PartialEq))]
-pub(super) struct Empty {
-    bounds: Bounds,
-}
-
-impl Empty {
-    pub fn new(bounds: Bounds) -> Self {
-        Self { bounds }
-    }
-
-    fn add_window(&self, window: Window, padding: f64) -> Split {
-        let leaf_bounds = spread_bounds_along_axis(self.bounds, Axis::default(), 1, padding);
-        let children = vec![Container::Leaf(Leaf::new(leaf_bounds[0], padding, window))];
-
-        Split::new(self.bounds, Axis::default(), padding, children)
-    }
-
-    #[cfg(test)]
-    pub fn dummy() -> Container {
-        use crate::container::tests::dummy_bounds;
-        Container::Empty(Empty::new(dummy_bounds()))
-    }
 }
 
 impl Container {
     pub fn min_width(&self) -> f64 {
         match self {
-            Self::Empty { .. } => 0.0,
             Self::Leaf(leaf) => leaf.window.min_width,
             Self::Split(split) => split.min_width(),
         }
@@ -88,7 +61,6 @@ impl Container {
 
     pub fn min_height(&self) -> f64 {
         match self {
-            Self::Empty { .. } => 0.0,
             Self::Leaf(leaf) => leaf.window.min_height,
             Self::Split(split) => split.min_height(),
         }
@@ -103,10 +75,6 @@ impl Container {
     //    existing children in said split, recursively.
     pub fn add_window(&mut self, window: Window, padding: f64) -> Result<()> {
         match self {
-            Self::Empty(empty) => {
-                *self = Self::Split(empty.add_window(window, padding));
-                Ok(())
-            }
             Self::Leaf(_) => Err(Error::CannotAddWindowToLeaf),
             Self::Split(split) => split.add_window(window, padding),
         }
@@ -114,7 +82,6 @@ impl Container {
 
     pub fn split(&mut self, axis: Axis) -> Result<()> {
         match self {
-            Self::Empty(_) => Err(Error::CannotSplitEmptyContainer),
             Self::Split(split) => split.split(axis),
             Self::Leaf(leaf) => {
                 *self = Self::Split(leaf.split(axis));
@@ -125,7 +92,6 @@ impl Container {
 
     pub(super) fn window_ids(&self) -> HashSet<WindowId> {
         match self {
-            Self::Empty(_) => HashSet::new(),
             Self::Leaf(leaf) => HashSet::from([leaf.window.id]),
             Self::Split(split) => split.window_ids(),
         }
@@ -133,7 +99,6 @@ impl Container {
 
     pub fn window_bounds_by_id(&self) -> HashMap<WindowId, Bounds> {
         match self {
-            Self::Empty(_) => HashMap::new(),
             Self::Leaf(leaf) => HashMap::from([(leaf.window.id, leaf.bounds)]),
             Self::Split(split) => split.window_bounds_by_id(),
         }
@@ -145,12 +110,9 @@ impl Container {
         padding: f64,
     ) -> Result<RemoveResult> {
         match self {
-            Self::Leaf(leaf) if leaf.window.id == window_id => {
-                *self = Self::Empty(Empty::new(leaf.bounds));
-                Ok(RemoveResult::BecomeEmpty)
-            }
+            Self::Leaf(leaf) if leaf.window.id == window_id => Ok(RemoveResult::BecomeEmpty),
             Self::Split(split) => split.remove_window(window_id, padding),
-            Self::Empty(_) | Self::Leaf(_) => Ok(RemoveResult::NotFound),
+            Self::Leaf(_) => Ok(RemoveResult::NotFound),
         }
     }
 
@@ -198,7 +160,6 @@ impl Container {
     // children recursively.
     fn resize(&mut self, new_bounds: Bounds) -> Result<()> {
         match self {
-            Self::Empty(empty) => empty.bounds = new_bounds,
             Self::Leaf(leaf) => leaf.bounds = new_bounds,
             Self::Split(split) => split.resize(new_bounds)?,
         }
@@ -214,7 +175,7 @@ impl Container {
     ) -> Result<()> {
         match self {
             // TODO: error
-            Self::Empty(_) | Self::Leaf(_) => Err(Error::WindowNotFound),
+            Self::Leaf(_) => Err(Error::WindowNotFound),
             Self::Split(split) => split.resize_window(window_id, direction, padding),
         }
     }
@@ -224,9 +185,8 @@ impl Container {
     }
 
     /// Get the bounds of a `Container`.
-    fn bounds(&self) -> Bounds {
+    pub fn bounds(&self) -> Bounds {
         match self {
-            Self::Empty(empty) => empty.bounds,
             Self::Leaf(leaf) => leaf.bounds,
             Self::Split(split) => split.bounds,
         }
@@ -241,7 +201,7 @@ impl Container {
                 .children
                 .iter()
                 .find_map(|child| child.find_window(target)),
-            Self::Empty { .. } | Self::Leaf { .. } => None,
+            Self::Leaf { .. } => None,
         }
     }
 }
