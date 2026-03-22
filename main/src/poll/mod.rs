@@ -1,16 +1,20 @@
 mod error;
 mod keyboard;
+mod kqueue;
 mod mux;
 mod observer;
 mod pipe;
 
 use crate::poll::error::Error;
+use core_graphics::Error::NoneAvailable;
+use core_graphics::KeyCommand;
 use libc::{intptr_t, kevent};
 pub use mux::Mux;
 pub use observer::*;
 pub use pipe::Pipe;
+use std::io::Read;
 use std::os::fd::AsRawFd;
-use std::os::unix::net::UnixListener;
+use std::os::unix::net::{UnixListener, UnixStream};
 use std::{
     os::fd::RawFd,
     sync::mpsc::{Receiver, Sender, channel},
@@ -18,13 +22,63 @@ use std::{
 };
 
 pub type Result<T> = std::result::Result<T, Error>;
+use crate::poll::kqueue::KQueue;
 pub use keyboard::*;
+
+pub enum Event {
+    Keyboard(Vec<KeyCommand>),
+    Workspace(Vec<WorkspaceEvent>),
+    CtlMsg { rx: Vec<u8>, reply: UnixStream },
+    Timer,
+}
 
 pub type Ident = usize;
 
-pub trait AsKEvent {
+pub trait Source {
+    type Event;
+
+    fn poll(&self) -> Option<Self::Event>;
     fn as_kevent(&self) -> libc::kevent;
     fn ident(&self) -> Ident;
+}
+
+pub trait PollSources {
+    type Event;
+
+    fn register(&self, kq: &KQueue);
+    fn poll_ident(&self, ident: Ident) -> Option<Self::Event>;
+}
+
+pub struct Base<Event>(std::marker::PhantomData<Event>);
+
+impl<Event> PollSources for Base<Event> {
+    type Event = Event;
+
+    fn register(&self, _: &KQueue) {}
+    fn poll_ident(&self, _: Ident) -> Option<Self::Event> {
+        None
+    }
+}
+
+impl<Head, Tail> PollSources for (Head, Tail)
+where
+    Head: Source,
+    Tail: PollSources<Event = Head::Event>,
+{
+    type Event = Head::Event;
+
+    fn register(&self, kq: &KQueue) {
+        kq.add(&self.0.as_kevent());
+        self.1.register(kq);
+    }
+
+    fn poll_ident(&self, ident: Ident) -> Option<Self::Event> {
+        if ident == self.0.ident() {
+            self.0.poll()
+        } else {
+            self.1.poll_ident(ident)
+        }
+    }
 }
 
 pub struct Timer {
@@ -32,7 +86,13 @@ pub struct Timer {
     pub interval: Duration,
 }
 
-impl AsKEvent for Timer {
+impl Source for Timer {
+    type Event = Event;
+
+    fn poll(&self) -> Option<Self::Event> {
+        Some(Event::Timer)
+    }
+
     fn as_kevent(&self) -> kevent {
         libc::kevent {
             ident: self.id,
@@ -49,7 +109,19 @@ impl AsKEvent for Timer {
     }
 }
 
-impl AsKEvent for UnixListener {
+impl Source for UnixListener {
+    type Event = Event;
+
+    fn poll(&self) -> Option<Self::Event> {
+        let mut buf = Vec::with_capacity(20);
+        let (mut stream, _) = self.accept().unwrap();
+        let _ = stream.read_to_end(&mut buf).unwrap();
+        Some(Event::CtlMsg {
+            rx: buf,
+            reply: stream,
+        })
+    }
+
     fn as_kevent(&self) -> kevent {
         libc::kevent {
             ident: self.as_raw_fd() as usize,
@@ -64,12 +136,6 @@ impl AsKEvent for UnixListener {
     fn ident(&self) -> Ident {
         self.as_raw_fd() as usize
     }
-}
-
-#[derive(Debug, Clone)]
-pub enum Event {
-    Readable(Ident),
-    Timer(Ident),
 }
 
 pub struct ChannelSource<T> {
@@ -106,10 +172,49 @@ impl<T> ChannelSender<T> {
     }
 }
 
-impl<T> AsKEvent for ChannelSource<T> {
+impl Source for ChannelSource<WorkspaceEvent> {
+    type Event = Event;
+
+    fn poll(&self) -> Option<Self::Event> {
+        let events = ChannelSource::drain(self);
+        if events.is_empty() {
+            None
+        } else {
+            Some(Event::Workspace(events))
+        }
+    }
+
     fn as_kevent(&self) -> kevent {
         libc::kevent {
             ident: self.pipe.read_fd as usize,
+            filter: libc::EVFILT_READ,
+            flags: libc::EV_ADD | libc::EV_ENABLE,
+            fflags: 0,
+            data: 0,
+            udata: std::ptr::null_mut(),
+        }
+    }
+
+    fn ident(&self) -> Ident {
+        self.pipe.read_fd as Ident
+    }
+}
+
+impl Source for ChannelSource<KeyCommand> {
+    type Event = Event;
+
+    fn poll(&self) -> Option<Event> {
+        let commands = ChannelSource::drain(self);
+        if commands.is_empty() {
+            None
+        } else {
+            Some(Event::Keyboard(commands))
+        }
+    }
+
+    fn as_kevent(&self) -> libc::kevent {
+        libc::kevent {
+            ident: self.ident(),
             filter: libc::EVFILT_READ,
             flags: libc::EV_ADD | libc::EV_ENABLE,
             fflags: 0,

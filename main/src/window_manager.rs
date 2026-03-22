@@ -19,10 +19,7 @@ use crate::{
             WindowMovedToLogicalDisplay, WindowRemoved, WindowResized, WindowSplitAlongAxis,
         },
     },
-    poll::{
-        AsKEvent, ChannelSource, Event, KeyboardHandler, Mux, Timer, WorkspaceEvent,
-        WorkspaceObserver,
-    },
+    poll::{ChannelSource, Event, KeyboardHandler, Mux, Timer, WorkspaceEvent, WorkspaceObserver},
     status_bar::StatusBar,
     window::Window,
 };
@@ -190,11 +187,12 @@ impl WindowManager {
         let _ = std::fs::remove_file(CTL_SOCK);
         let ctl_sock = UnixListener::bind(CTL_SOCK).unwrap();
 
-        let mux = Mux::new().unwrap();
-        mux.add(&keyboard_source);
-        mux.add(&workspace_source);
-        mux.add(&timer);
-        mux.add(&ctl_sock);
+        let mux = Mux::new()
+            .unwrap()
+            .with_first(keyboard_source)
+            .with(workspace_source)
+            .with(timer)
+            .with(ctl_sock);
 
         unsafe {
             keyboard_handler
@@ -204,38 +202,27 @@ impl WindowManager {
         loop {
             unsafe { CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.1, false) };
 
-            let events = mux.poll();
-            for event in events {
+            for event in mux.poll() {
                 match event {
-                    Event::Readable(ident) if ident == keyboard_source.ident() => {
-                        for command in keyboard_source.drain() {
+                    Event::Keyboard(commands) => {
+                        for command in commands {
                             self.handle_event(event_loop::Event::KeyCommand { command });
                         }
                     }
-                    Event::Readable(ident) if ident == workspace_source.ident() => {
-                        workspace_source.drain();
+                    Event::Workspace(_) => {
                         for event in event_loop.poll_windows() {
                             self.handle_event(event);
                         }
                     }
-                    Event::Readable(ident) if ident == ctl_sock.ident() => {
+                    Event::CtlMsg { rx, mut reply } => {
                         println!("ctl sock rx");
-                        let mut buf = Vec::with_capacity(20);
-                        let (mut stream, _) = ctl_sock.accept().unwrap();
-                        let _ = stream.read_to_end(&mut buf).unwrap();
-                        println!("message on ctl sock: {buf:?}");
-                        serde_json::to_writer(&mut stream, &WmToCtlMessage::Config(self.config))
+                        println!("message on ctl sock: {rx:?}");
+                        serde_json::to_writer(&mut reply, &WmToCtlMessage::Config(self.config))
                             .unwrap();
-                        stream.shutdown(std::net::Shutdown::Write);
+                        reply.shutdown(std::net::Shutdown::Write);
                     }
-                    Event::Timer(ident) if ident == timer.ident() => {
+                    Event::Timer => {
                         println!("timer tick");
-                    }
-                    Event::Timer(ident) => {
-                        println!("spurious timer event {ident}");
-                    }
-                    Event::Readable(ident) => {
-                        println!("spurious read event {ident}")
                     }
                 }
             }

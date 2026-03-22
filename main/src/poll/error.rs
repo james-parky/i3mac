@@ -3,4 +3,5 @@ pub enum Error {
     FailedToCreateRunLoopSource,
     FailedToCreateKeyboardEventTap,
     FailedToCreateMux,
+    FailedToCreateKQueue,
 }

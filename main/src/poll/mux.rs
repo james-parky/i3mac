@@ -1,86 +1,51 @@
-use crate::{
-    poll::Event,
-    poll::error::Error,
-    poll::{AsKEvent, Result},
-};
-use std::os::raw::c_int;
+use crate::poll::{Base, PollSources, Result, Source, kqueue::KQueue};
+use std::marker::PhantomData;
 
-pub struct Mux {
-    kq: c_int,
+pub struct Mux<Sources> {
+    kq: KQueue,
+    sources: Sources,
 }
 
-impl Mux {
+impl Mux<()> {
     pub fn new() -> Result<Self> {
-        unsafe {
-            match libc::kqueue() {
-                x if x < 0 => Err(Error::FailedToCreateMux),
-                x => Ok(Self { kq: x }),
-            }
+        Ok(Self {
+            kq: KQueue::new()?,
+            sources: (),
+        })
+    }
+
+    pub fn with_first<New: Source>(self, source: New) -> Mux<(New, Base<New::Event>)> {
+        self.kq.add(&source.as_kevent());
+        Mux {
+            kq: self.kq,
+            sources: (source, Base(PhantomData)),
         }
-    }
-
-    pub fn add<T: AsKEvent>(&self, event: &T) {
-        use std::ptr::{null, null_mut};
-        unsafe { libc::kevent(self.kq, &event.as_kevent(), 1, null_mut(), 0, null()) };
-    }
-
-    /// Return any currently pending events without blocking.
-    pub fn poll(&self) -> Vec<Event> {
-        self.run(Some(libc::timespec {
-            tv_sec: 0,
-            tv_nsec: 0,
-        }))
-    }
-
-    fn run(&self, timeout: Option<libc::timespec>) -> Vec<Event> {
-        const MAX: usize = 32;
-
-        const EMPTY_KEVENT: libc::kevent = libc::kevent {
-            ident: 0,
-            filter: 0,
-            flags: 0,
-            fflags: 0,
-            data: 0,
-            udata: std::ptr::null_mut(),
-        };
-
-        let mut buf = [EMPTY_KEVENT; MAX];
-
-        let timeout_ptr = match &timeout {
-            Some(t) => t,
-            None => std::ptr::null(),
-        };
-
-        let n = unsafe {
-            libc::kevent(
-                self.kq,
-                std::ptr::null(),
-                0,
-                buf.as_mut_ptr(),
-                MAX as c_int,
-                timeout_ptr,
-            )
-        };
-
-        if n <= 0 {
-            return vec![];
-        }
-
-        buf[..n as usize]
-            .iter()
-            .filter_map(|e| match e.filter {
-                libc::EVFILT_READ => Some(Event::Readable(e.ident)),
-                libc::EVFILT_TIMER => Some(Event::Timer(e.ident)),
-                _ => None,
-            })
-            .collect()
     }
 }
 
-impl Drop for Mux {
-    fn drop(&mut self) {
-        unsafe {
-            libc::close(self.kq);
+impl<Sources> Mux<Sources> {
+    pub fn with<Event, New>(self, source: New) -> Mux<(New, Sources)>
+    where
+        New: Source<Event = Event>,
+        Sources: PollSources<Event = Event>,
+    {
+        self.kq.add(&source.as_kevent());
+        Mux {
+            kq: self.kq,
+            sources: (source, self.sources),
         }
+    }
+}
+
+impl<Sources> Mux<Sources>
+where
+    Sources: PollSources,
+{
+    pub fn poll(&self) -> Vec<Sources::Event> {
+        self.kq
+            .poll()
+            .into_iter()
+            .filter_map(|ident| self.sources.poll_ident(ident))
+            .collect()
     }
 }
