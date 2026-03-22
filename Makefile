@@ -17,7 +17,7 @@ clean:
 distclean:
 	$(RM) -r .cargo
 
-run:
+run: i3mac
 	./target/release/i3mac --padding $(PADDING)
 
 .PHONY: clippy clean distclean run
