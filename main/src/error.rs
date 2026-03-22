@@ -21,6 +21,8 @@ pub enum Error {
     PhysicalDoesNotContainLogical(DisplayId, display::physical::Id),
     CreateLogger(io::Error),
     LogicalAlreadyExists(logical::Id),
+    NoAvailableLogical,
+    NoDisplays,
 }
 
 pub(crate) type Result<T> = std::result::Result<T, Error>;

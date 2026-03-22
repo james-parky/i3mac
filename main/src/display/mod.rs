@@ -21,24 +21,60 @@ use core_graphics::{Bounds, WindowId};
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
 
-pub struct Displays {
+pub struct Displays<S> {
     physical_displays: HashMap<physical::Id, physical::Display>,
     registry: Registry,
-    active_physical_display_id: Option<physical::Id>,
     logger: Logger,
+    state: S,
 }
 
-impl Displays {
+pub struct Uninitialised;
+pub struct Initialised {
+    active_physical_display_id: physical::Id,
+}
+
+impl Displays<Uninitialised> {
     pub fn new() -> Self {
         Self {
             physical_displays: Default::default(),
             registry: Registry::new(),
-            active_physical_display_id: None,
             // TODO: get log level from a display::Config?
             logger: Logger::try_new("/dev/stdout", Level::Trace, Prefix::DISPLAY_MANAGER).unwrap(),
+            state: Uninitialised,
         }
     }
 
+    pub fn add_first_physical(
+        self,
+        pid: physical::Id,
+        bounds: Bounds,
+        cfg: physical::Config,
+    ) -> Result<Displays<Initialised>> {
+        let lid = self
+            .registry
+            .next_available_logical()
+            .ok_or(Error::NoAvailableLogical)?;
+
+        let pd = physical::Display::new(pid, lid, bounds, cfg);
+
+        let physical_displays = HashMap::from_iter([(pid, pd)]);
+        let mut registry = Registry::new();
+        registry.register(lid, pid);
+
+        let ret = Displays {
+            physical_displays,
+            registry,
+            logger: self.logger,
+            state: Initialised {
+                active_physical_display_id: pid,
+            },
+        };
+
+        Ok(ret)
+    }
+}
+
+impl Displays<Initialised> {
     /// Returns the ID of the physical display that manages the provided window.
     pub fn display_of_window(&self, wid: WindowId) -> Option<physical::Id> {
         self.physical_displays
@@ -62,7 +98,7 @@ impl Displays {
 
     pub fn focus_display(&mut self, id: logical::Id) -> Option<WindowId> {
         let pid = self.registry.owner_of(id)?;
-        self.active_physical_display_id = Some(pid);
+        self.state.active_physical_display_id = pid;
 
         let ret = self.physical_displays.get(&pid).unwrap().focused_window();
         // TODO: separate logs for if the display was empty or not?
@@ -73,7 +109,7 @@ impl Displays {
 
     pub fn split(&mut self, axis: Axis) -> Result<()> {
         self.physical_displays
-            .get_mut(&self.active_physical_display_id.unwrap())
+            .get_mut(&self.state.active_physical_display_id)
             .unwrap()
             .split(axis)?;
 
@@ -82,7 +118,7 @@ impl Displays {
     }
 
     pub fn set_active_physical_display(&mut self, id: physical::Id) {
-        self.active_physical_display_id = Some(id);
+        self.state.active_physical_display_id = id;
         SetActivePhysical(id).log(&mut self.logger);
     }
 
@@ -124,13 +160,13 @@ impl Displays {
         self.physical_displays.insert(pid, pd);
         self.registry.register(lid, pid);
 
-        self.active_physical_display_id = Some(pid);
+        self.state.active_physical_display_id = pid;
         AddPhysical(pid, lid).log(&mut self.logger);
     }
 
     pub(crate) fn active_logical_display_id(&self) -> logical::Id {
         self.physical_displays
-            .get(&self.active_physical_display_id.unwrap())
+            .get(&self.state.active_physical_display_id)
             .unwrap()
             .active_logical_id()
     }
@@ -250,7 +286,7 @@ impl Displays {
 
     pub fn active_physical_display_mut(&mut self) -> &mut physical::Display {
         self.physical_displays
-            .get_mut(&self.active_physical_display_id.unwrap())
+            .get_mut(&self.state.active_physical_display_id)
             .unwrap()
     }
 }
@@ -282,23 +318,27 @@ mod test {
         }
     }
 
-    impl Default for Displays {
+    impl Default for Displays<Uninitialised> {
         fn default() -> Self {
             Self {
                 physical_displays: Default::default(),
                 registry: Registry::new(),
-                active_physical_display_id: None,
                 logger: Logger::try_new("/dev/null", Level::Error, Prefix::DISPLAY_MANAGER)
                     .unwrap(),
+                state: Uninitialised,
             }
         }
     }
 
     #[test]
     fn add_physical_creates_a_logical() {
-        let mut d = Displays::default();
+        let d = Displays::default();
 
         let pid = pid(0);
+
+        let mut d = d
+            .add_first_physical(pid, bounds(), Default::default())
+            .unwrap();
 
         // There are no logical displays, so the first should be 0.
         d.add_physical(pid, bounds(), Default::default());

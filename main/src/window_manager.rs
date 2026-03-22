@@ -1,3 +1,4 @@
+use crate::display::Uninitialised;
 use crate::log::Prefix;
 use crate::{
     config::Config,
@@ -47,7 +48,7 @@ pub struct WindowManager {
     /// window objects.
     windows: HashMap<WindowId, Window>,
     /// The delegate display manager.
-    displays: Displays,
+    displays: Displays<display::Initialised>,
     /// A logger to that produces logs prefixed with "WM".
     logger: Logger,
     /// Config for the window manager.
@@ -69,16 +70,38 @@ impl WindowManager {
     //       WindowManagers set of managed windows
     //  - Move all managed windows to where they should be
     pub fn new(config: Config) -> Result<Self> {
+        let mut cg_displays = core_graphics::Display::all()
+            .map_err(Error::CoreGraphics)?
+            .into_iter();
+        let (first_id, first_cg) = cg_displays.next().ok_or(Error::NoDisplays)?;
+
+        let displays = Displays::new();
+        let displays =
+            displays.add_first_physical(first_id.into(), first_cg.bounds, config.into())?;
+
         let mut wm = Self {
             windows: Default::default(),
-            displays: Displays::new(),
+            displays,
             logger: Logger::try_new("/dev/stdout", config.log_level, Prefix::WINDOW_MANAGER)
                 .map_err(Error::CreateLogger)?,
             config,
             status_bars: Default::default(),
         };
 
-        for (id, cg_display) in core_graphics::Display::all().map_err(Error::CoreGraphics)? {
+        for window in first_cg.windows {
+            wm.start_managing_window(window)?;
+        }
+
+        let lids: Vec<_> = wm
+            .displays
+            .logical_ids(first_id.into())
+            .into_iter()
+            .collect();
+        let status_bar = StatusBar::new(lids, first_cg.bounds, Colour::Clear);
+
+        wm.status_bars.insert(first_id, status_bar);
+
+        for (id, cg_display) in cg_displays {
             // First CoreGraphics display detected is chosen to be the active physical display
             wm.displays
                 .add_physical(id.into(), cg_display.bounds, config.into());
