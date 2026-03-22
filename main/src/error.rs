@@ -23,6 +23,9 @@ pub enum Error {
     LogicalAlreadyExists(logical::Id),
     NoAvailableLogical,
     NoDisplays,
+    CannotRemoveOccupiedLogical,
+    CannotSplitEmptyLogical,
+    CannotFindWindow,
 }
 
 pub(crate) type Result<T> = std::result::Result<T, Error>;

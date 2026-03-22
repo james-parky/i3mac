@@ -163,7 +163,7 @@ impl WindowManager {
     /// floating, minimised etc.
     fn apply_layout(&mut self) -> Result<()> {
         for pd in self.displays.physical_displays().values() {
-            for (id, bounds) in pd.active_window_bounds() {
+            for (id, bounds) in pd.window_bounds() {
                 if let Some(window) = self.windows.get_mut(&id) {
                     window.update_bounds(bounds)?;
                     window.init()?;
